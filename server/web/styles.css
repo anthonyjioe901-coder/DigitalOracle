@@ -61,6 +61,63 @@ main {
     margin-top: 8px;
 }
 
+@media (max-width: 960px) {
+    main {
+        align-items: flex-start;
+        padding: 32px 16px;
+    }
+
+    .layout {
+        grid-template-columns: 1fr;
+        width: min(640px, 100%);
+    }
+
+    .card,
+    .info-card {
+        max-width: 100%;
+    }
+
+    .card {
+        order: 2;
+    }
+
+    .info-card:first-of-type {
+        order: 1;
+    }
+
+    .info-card:last-of-type {
+        order: 3;
+    }
+}
+
+@media (max-width: 520px) {
+    body {
+        padding: 0;
+    }
+
+    main {
+        padding: 24px 12px 48px;
+    }
+
+    .card,
+    .info-card {
+        padding: 20px;
+        box-shadow: 0 8px 32px rgba(15, 23, 42, 0.4);
+    }
+
+    h1 {
+        font-size: 24px;
+    }
+
+    .info-card h2 {
+        font-size: 20px;
+    }
+
+    button {
+        font-size: 15px;
+    }
+}
+
 h1 {
     margin-top: 0;
     font-size: 28px;
