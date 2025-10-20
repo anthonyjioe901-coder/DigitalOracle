@@ -1,0 +1,60 @@
+.hidden {
+    display: none;
+}
+
+fieldset {
+    border: 1px solid #334155;
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 18px;
+}
+
+legend {
+    font-size: 16px;
+    color: #fbbf24;
+    padding: 0 6px;
+}
+
+.option {
+    border-bottom: 1px solid #1f2937;
+    padding: 12px 0;
+    display: flex;
+    gap: 12px;
+}
+
+.option:last-child {
+    border-bottom: none;
+}
+
+.option input[type="radio"] {
+    margin-top: 6px;
+}
+
+.option-details {
+    flex: 1;
+}
+
+.option-details h3 {
+    margin: 0 0 6px;
+    font-size: 18px;
+    color: #38bdf8;
+}
+
+.option-details p {
+    margin: 0 0 8px;
+    font-size: 14px;
+}
+
+.option-details a {
+    color: #a855f7;
+    text-decoration: none;
+}
+
+.option-details a:hover {
+    text-decoration: underline;
+}
+
+.count {
+    font-size: 13px;
+    color: #94a3b8;
+}

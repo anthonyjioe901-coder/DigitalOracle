@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Digital Oracle Submissions</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="admin.css">
+</head>
+<body>
+    <main>
+        <section class="card">
+            <h1>Audition Submissions</h1>
+            <p>Use your admin token to load the latest entries. Filter by country or limit as needed.</p>
+            <form id="admin-form">
+                <label>
+                    Admin Token
+                    <input type="password" name="token" required>
+                </label>
+                <label>
+                    Country Filter (optional)
+                    <input type="text" name="country" placeholder="Country name">
+                </label>
+                <label>
+                    Limit (optional)
+                    <input type="number" name="limit" min="1" placeholder="e.g. 50">
+                </label>
+                <button type="submit">Load Submissions</button>
+            </form>
+            <div id="admin-status" role="status"></div>
+            <div id="results"></div>
+        </section>
+    </main>
+    <script src="admin.js"></script>
+</body>
+</html>

@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Digital Oracle Voting Portal</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="vote.css">
+</head>
+<body>
+    <main>
+        <section class="card" id="content">
+            <h1>Digital Oracle Voting Portal</h1>
+            <p id="ballot-meta"></p>
+            <form id="vote-form" class="hidden">
+                <fieldset id="nominee-list"></fieldset>
+                <label>
+                    Your Email (one vote per email)
+                    <input type="email" name="email" required placeholder="you@example.com">
+                </label>
+                <label>
+                    Your Name (optional)
+                    <input type="text" name="name" placeholder="Display name">
+                </label>
+                <button type="submit">Cast Vote</button>
+            </form>
+            <div id="vote-status" role="status"></div>
+        </section>
+    </main>
+    <script src="vote.js"></script>
+</body>
+</html>

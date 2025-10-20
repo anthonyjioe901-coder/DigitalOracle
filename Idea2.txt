@@ -1,0 +1,92 @@
+THE DIGITAL ORACLE REVIVAL: SOLO STREAM FORMAT WITH SIGNAL BANK
+
+Big Idea:
+Run a weekly live “digital oracle” showdown every Sunday where followers wager their intuition, not money. You publish outcomes pulled from public, verifiable data streams that you cannot control (lottery draws, weather stats, game scores, traffic numbers, trending hashtag counts). Viewers submit predictions, you reveal the real-world result, and the community celebrates the cleverest guessers. The show is lean enough to run from one room yet layered with your personal style so nobody else can clone it. Funding and rewards come from the Social Moneybank concept (now the Signal Bank), keeping everything legal and transparent. Weekdays are dedicated to scouting contestants, building hype, and letting the community select who enters the Sunday arena.
+
+Why It Works:
+- Uses genuine external randomness so the audience trusts every reveal.
+- Your personality, delivery, and signal curation make it uniquely yours.
+- No expensive setup: laptop, phone, free data feeds, and a simple overlay.
+- Episodes are 12 minutes max, optimized for TikTok Live/YouTube/IG.
+- Community feels like they are part of a secret society decoding reality together.
+
+Sunday Show Skeleton (12 minutes):
+1. Signal Briefing (2 min)
+	- Go live, greet viewers, and show the day’s “Oracle Grid” (three prediction slots). Example slots:
+	  Slot A: Last two digits of BTC price at 3:00 PM UTC.
+	  Slot B: Total goals in the Premier League match starting soon.
+	  Slot C: Number of tweets containing a bizarre word combo in next 30 minutes.
+	- Explain why each signal is impossible for you to manipulate.
+
+2. Prediction Window (4 min)
+	- Viewers drop guesses via chat or a quick Google Form link.
+	- Feature a few bold or funny predictions on screen to stir competition.
+	- Close submissions with a countdown; everything time-stamped for fairness.
+
+3. Oracle Observation (3 min)
+	- When the external data locks in, share screen or screenshots showing the official source (API capture, website, TV feed, etc.).
+	- Reveal the winning prediction for each slot (closest wins, or exact match if you choose).
+	- Log results live into a public Google Sheet called the Oracle Ledger so skeptics can verify later.
+
+4. Spotlight Moment (2 min)
+	- Shout out the day’s “Insight Champions.”
+	- If a Viewer provides the data idea, credit them as “Signal Scout.”
+
+5. Signal Bank Segment (1 min)
+	- Display current Signal Bank balance, contributions, and upcoming reward agenda.
+	- Mention the next Signal Council voting time where community will choose who receives funding (contestant gear, livestream upgrades, charitable boosts).
+
+Keeps It Non-Replicable:
+- You curate the signals daily based on your interests, news sense, and audience memes.
+- Your commentary and reaction style become the signature draw.
+- Oracle Ledger, archives, and highlight reels are branded to you (logos, catchphrases, unique sound cues).
+- “Encrypted Hints” posted earlier in the day tease signal topics, building lore followers will attribute to you.
+
+Operational Toolkit:
+- Free APIs and sites: CoinGecko, Yahoo Weather, ESPN scoreboards, Social Blade, or Google Trends.
+- Automation helpers: Zapier/IFTTT to capture data snapshots, Google Forms + Sheets to log predictions/results automatically.
+- Stream overlay: simple graphic made in Canva showing Oracle Grid, countdown timers, Signal Bank ticker.
+- Archive: public Google Drive folder holding daily result proof (screenshots, short clips).
+
+Signal Bank (Social Moneybank) Implementation:
+- Contributions go through Ko-fi/Patreon/Buy Me a Coffee titled “Signal Bank.”
+- Every deposit is auto-logged to a public Google Sheet (amount, alias, date, message).
+- Twice a week, run a 5-minute “Signal Council” mini-stream:
+  1. Present three funding proposals (e.g., reward for top predictor, gear gift to rising creator, charity donation).
+  2. Allow contributors and random viewers (picked via wheel spin) to vote live using platform polls.
+  3. Announce and schedule the payout; publish receipts or screenshots in the Oracle Ledger.
+- Because funds are community-directed support, not wager payouts, the format stays non-gambling and transparent.
+
+Monetization Stack:
+- Signal Bank contributions (voluntary, clearly documented).
+- “Oracle Circle” membership ($8/month) providing:
+  • Early access to hints and data lists.
+  • Members-only Signal Council chat to propose future signals.
+  • Personalized “data drop” shout-out once a month.
+- Sponsorships: brands underwrite a signal slot (“Weather Wildcard presented by Local Cafe”).
+- Digital merch: weekly “Insight Champion” badge packs, ringtone of your catchphrase when a prediction wins, printable scorecard PDFs.
+- Highlight syndication: YouTube compilations monetized with ads; clips licensed to meme pages.
+
+Contestant Pipeline & Weekly Loop:
+Monday-Tuesday: Open global audition prompt. Interested players record a short vertical video (max 45 seconds) explaining why they want to be the week’s Oracle Challenger. They post on their own socials with the hashtag #DigitalOracleTryout and tag your account. Submissions auto-logged through a simple Google Form so you can track links.
+Wednesday: Curate the top submission from each available country. Announce the “Country Picks” montage on your socials and upload all candidate clips to a dedicated page on your site.
+Thursday-Friday: Publish the voting portal (hosted on your server). Followers vote for their favorite seven contestants. Each voter must authenticate with email or social handle to prevent spam. Show a live leaderboard but hide final percentages until the Sunday reveal.
+Saturday: DM or email the seven winners with onboarding instructions (call time, tech check, signal briefing). Collect backup recording of their raw video in case of connection issues. Record a teaser reel with their intros to run during the Sunday pre-show.
+Sunday (show day):
+	• Afternoon: Conduct tech rehearsal with all seven contestants (audio, lighting, background check).
+	• Evening: Run the 12-minute Digital Oracle show featuring the selected contestants delivering predictions for each Oracle Grid slot. Use their pre-submitted guesses so lag does not break pacing.
+	• Post-show: Announce next week’s audition prompt and highlight standout clips from eliminated contestants to keep them in the loop.
+
+Launch Sprint:
+Week 1: Rebuild Oracle Grid graphics, set up Ledger sheet, list 30 reliable data sources, and design the audition submission form.
+Week 2: Dry-run one full weekly cycle offline (simulate submissions with friends, run test vote, rehearse Sunday show).
+Week 3: Soft launch the first real audition call; host a private Sunday stream to a small audience for feedback.
+Week 4: Public launch with a regular Sunday slot (e.g., 7 PM local). Debut the Signal Bank ledger and voting portal simultaneously.
+Week 5+: Introduce Oracle Circle membership, begin Signal Council votes, partner with regional micro-influencers to drive country submissions, pitch sponsorship deck to local businesses or creators.
+
+Success Benchmarks:
+- 500 average live viewers by end of Month 2.
+- 60% of live viewers submitting at least one guess per episode.
+- Signal Bank hitting $300 cumulative contributions in first 30 days without negative feedback.
+- Oracle Circle reaching 50 paying members by Month 3.
+- Weekly highlight reels averaging 50K cross-platform views.

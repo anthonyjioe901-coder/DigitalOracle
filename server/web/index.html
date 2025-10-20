@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Digital Oracle Audition Portal</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <main>
+        <section class="card">
+            <h1>Digital Oracle Audition</h1>
+            <p>Record a short video explaining why you should enter this week's Digital Oracle showdown. Paste your link below and hit submit.</p>
+            <form id="audition-form">
+                <label>
+                    Full Name
+                    <input type="text" name="name" required>
+                </label>
+                <label>
+                    Country
+                    <input type="text" name="country" required>
+                </label>
+                <label>
+                    Social Handle (optional)
+                    <input type="text" name="socialHandle" placeholder="@username">
+                </label>
+                <label>
+                    Video URL
+                    <input type="url" name="videoUrl" required placeholder="https://...">
+                </label>
+                <label>
+                    Message (optional)
+                    <textarea name="message" rows="4" placeholder="Tell us anything else"></textarea>
+                </label>
+                <button type="submit">Submit Audition</button>
+            </form>
+            <div id="status" role="status"></div>
+        </section>
+    </main>
+    <script src="app.js"></script>
+</body>
+</html>

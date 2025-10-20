@@ -1,0 +1,38 @@
+#results {
+    margin-top: 24px;
+    display: grid;
+    gap: 12px;
+}
+
+.submission {
+    border: 1px solid #334155;
+    border-radius: 10px;
+    padding: 16px;
+    background: #0f1a31;
+}
+
+.submission h2 {
+    margin: 0 0 8px;
+    font-size: 18px;
+    color: #fbbf24;
+}
+
+.submission a {
+    color: #38bdf8;
+    text-decoration: none;
+}
+
+.submission a:hover {
+    text-decoration: underline;
+}
+
+.meta {
+    font-size: 13px;
+    color: #94a3b8;
+    margin-bottom: 8px;
+}
+
+.message {
+    font-size: 14px;
+    white-space: pre-wrap;
+}

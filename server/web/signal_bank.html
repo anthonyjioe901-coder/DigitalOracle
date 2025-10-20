@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Signal Bank Ledger</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="signal_bank.css">
+</head>
+<body>
+    <main>
+        <section class="card">
+            <h1>Signal Bank Contribution Log</h1>
+            <p>Log your pledge to support Digital Oracle projects. We record every entry publicly for full transparency.</p>
+            <form id="contribution-form">
+                <label>
+                    Name or Alias (optional)
+                    <input type="text" name="name" placeholder="Your name">
+                </label>
+                <label>
+                    Amount (USD)
+                    <input type="number" name="amount" step="0.01" min="1" required>
+                </label>
+                <label>
+                    Message (optional)
+                    <textarea name="message" rows="3" placeholder="Why you're contributing"></textarea>
+                </label>
+                <button type="submit">Submit Contribution</button>
+            </form>
+            <div id="contribution-status" role="status"></div>
+            <div class="ledger-controls">
+                <span id="total-display">Total: $0.00</span>
+                <button id="refresh-ledger" type="button">Refresh Ledger</button>
+            </div>
+            <div id="ledger"></div>
+        </section>
+    </main>
+    <script src="signal_bank.js"></script>
+</body>
+</html>
