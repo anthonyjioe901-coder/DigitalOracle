@@ -7,34 +7,56 @@
 </head>
 <body>
     <main>
-        <section class="card">
-            <h1>Digital Oracle Audition</h1>
-            <p>Record a short video explaining why you should enter this week's Digital Oracle showdown. Paste your link below and hit submit.</p>
-            <form id="audition-form">
-                <label>
-                    Full Name
-                    <input type="text" name="name" required>
-                </label>
-                <label>
-                    Country
-                    <input type="text" name="country" required>
-                </label>
-                <label>
-                    Social Handle (optional)
-                    <input type="text" name="socialHandle" placeholder="@username">
-                </label>
-                <label>
-                    Video URL
-                    <input type="url" name="videoUrl" required placeholder="https://...">
-                </label>
-                <label>
-                    Message (optional)
-                    <textarea name="message" rows="4" placeholder="Tell us anything else"></textarea>
-                </label>
-                <button type="submit">Submit Audition</button>
-            </form>
-            <div id="status" role="status"></div>
-        </section>
+        <div class="layout">
+            <aside class="info-card">
+                <h2>How To Audition</h2>
+                <ul>
+                    <li>Film a 45-second max vertical video introducing yourself.</li>
+                    <li>Explain why you should be this Sunday's Digital Oracle challenger.</li>
+                    <li>Upload to any social platform and copy the public link.</li>
+                    <li>Tag your post with <strong>#DigitalOracleTryout</strong> to get noticed.</li>
+                </ul>
+            </aside>
+
+            <section class="card">
+                <h1>Digital Oracle Audition</h1>
+                <p>Record a short video explaining why you should enter this week's Digital Oracle showdown. Paste your link below and hit submit.</p>
+                <form id="audition-form">
+                    <label>
+                        Full Name
+                        <input type="text" name="name" required>
+                    </label>
+                    <label>
+                        Country
+                        <input type="text" name="country" required>
+                    </label>
+                    <label>
+                        Social Handle (optional)
+                        <input type="text" name="socialHandle" placeholder="@username">
+                    </label>
+                    <label>
+                        Video URL
+                        <input type="url" name="videoUrl" required placeholder="https://...">
+                    </label>
+                    <label>
+                        Message (optional)
+                        <textarea name="message" rows="4" placeholder="Tell us anything else"></textarea>
+                    </label>
+                    <button type="submit">Submit Audition</button>
+                </form>
+                <div id="status" role="status"></div>
+            </section>
+
+            <aside class="info-card">
+                <h2>What Happens Next</h2>
+                <ul>
+                    <li>We feature one audition per country every Wednesday.</li>
+                    <li>The community votes Thursday–Friday to chọn the top seven.</li>
+                    <li>Winners receive tech-check instructions on Saturday.</li>
+                    <li>Sunday night you appear live in the Digital Oracle arena.</li>
+                </ul>
+            </aside>
+        </div>
     </main>
     <script src="app.js"></script>
 </body>
