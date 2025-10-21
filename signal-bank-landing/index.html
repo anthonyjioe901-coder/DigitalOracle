@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SocioVault | Social Media Bank For Community Support</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <header class="hero">
+        <nav class="nav">
+            <div class="nav-left">
+                <span class="logo">SocioVault</span>
+                <span class="tagline">Community • Transparent • Democratic</span>
+            </div>
+            <div class="nav-links">
+                <a href="#how">How it works</a>
+                <a href="#safety">Safeguards</a>
+                <a href="#apply">Request help</a>
+                <a href="#ledger" class="pill">Live ledger</a>
+            </div>
+        </nav>
+
+        <div class="hero-body">
+            <div class="badge">↓ Join 2,847 contributors</div>
+            <h1>Communities hold the vault keys.</h1>
+            <p>Pool money. Publish needs. Vote on who receives support. Funds stay locked until the community says "go."</p>
+            <div class="hero-actions">
+                <a class="btn primary" href="#join">
+                    <span>Become a contributor</span>
+                    <span class="arrow">→</span>
+                </a>
+                <a class="btn ghost" href="#apply">Need support?</a>
+            </div>
+            <div class="stat-bar">
+                <article>
+                    <div class="stat-icon">💰</div>
+                    <h3 data-stat="balance">$48,320</h3>
+                    <p>Community balance</p>
+                </article>
+                <article>
+                    <div class="stat-icon">✓</div>
+                    <h3 data-stat="distributed">92%</h3>
+                    <p>Distributed via votes</p>
+                </article>
+                <article>
+                    <div class="stat-icon">❤️</div>
+                    <h3 data-stat="stories">311</h3>
+                    <p>Stories funded</p>
+                </article>
+            </div>
+        </div>
+    </header>
+
+    <section class="section" id="how">
+        <h2>How SocioVault works</h2>
+        <div class="steps">
+            <article class="step-card">
+                <span class="step-number">01</span>
+                <h3>Secure community deposits</h3>
+                <p>Supporters send optional one-time or recurring deposits to the shared vault. Every dollar is timestamped and logged in the public ledger.</p>
+            </article>
+            <article class="step-card">
+                <span class="step-number">02</span>
+                <h3>Public requests & verification</h3>
+                <p>Anyone seeking help records a short video, adds proof, and submits their story. Moderators verify identity and documentation before publishing.</p>
+            </article>
+            <article class="step-card">
+                <span class="step-number">03</span>
+                <h3>Weekly voting windows</h3>
+                <p>Followers review the live board, ask questions, and cast votes. At the cutoff, funds are released to the highest-supported requests until that week’s budget is met.</p>
+            </article>
+            <article class="step-card">
+                <span class="step-number">04</span>
+                <h3>Impact receipts & stories</h3>
+                <p>Recipients share receipts, follow-up clips, and gratitude messages. Summaries join the transparency vault so contributors always see the impact.</p>
+            </article>
+        </div>
+    </section>
+
+    <section class="section strip" id="safety">
+        <div class="section-header">
+            <h2>Trust is built into every vault door</h2>
+            <p>SocioVault blends social media energy with bank-grade accountability. Here’s how we keep the system safe and fair.</p>
+        </div>
+        <div class="grid four">
+            <article class="card">
+                <h3>Real-time balance</h3>
+                <p>Public dashboard mirrors the vault at all times. Balance snapshots post to socials every day.</p>
+            </article>
+            <article class="card">
+                <h3>Multi-signature releases</h3>
+                <p>No single admin can move funds. Three community custodians must confirm payouts.</p>
+            </article>
+            <article class="card">
+                <h3>Open vote audit</h3>
+                <p>Ballots are hashed and stored so anyone can verify results without exposing voter identity.</p>
+            </article>
+            <article class="card">
+                <h3>Cooling-off window</h3>
+                <p>Contributors can retract deposits within 48 hours if a proposal concerns them.</p>
+            </article>
+        </div>
+    </section>
+
+    <section class="section" id="stories">
+        <h2>Who can request SocioVault support?</h2>
+        <div class="grid three">
+            <article class="card story">
+                <h3>Emergency relief</h3>
+                <p>Medical, housing, or urgent family care with proof of costs and need-by dates.</p>
+            </article>
+            <article class="card story">
+                <h3>Micro-business fuel</h3>
+                <p>Side hustles or community projects that need a small push to launch.</p>
+            </article>
+            <article class="card story">
+                <h3>Community upgrades</h3>
+                <p>Neighborhood cleanups, school drives, mutual aid operations, and more.</p>
+            </article>
+        </div>
+        <p class="note">Every story must publish a follow-up within 14 days of receiving funds. Failure to report triggers an investigation and temporary suspension.</p>
+    </section>
+
+    <section class="section strip" id="ledger">
+        <div class="section-header">
+            <h2>The transparency ledger</h2>
+            <p>Every contribution, every request, every decision — all visible in real-time.</p>
+        </div>
+        
+        <div id="live-ledger" class="ledger-preview">
+            <div class="ledger-loading">Loading live data...</div>
+        </div>
+    </section>
+
+    <section class="section" id="active-requests">
+        <h2>Active help requests (voting now)</h2>
+        <p>Real people. Real needs. Real votes happening right now.</p>
+        <div id="requests-display" class="requests-grid">
+            <div class="loading">Loading requests...</div>
+        </div>
+    </section>
+        <div class="apply-grid">
+            <article class="card">
+                <h3>1. Prepare evidence</h3>
+                <p>Gather documents, invoices, or photos that prove your situation. We only approve verified requests.</p>
+            </article>
+            <article class="card">
+                <h3>2. Record your story</h3>
+                <p>Film a 60-second vertical video. Share who you are, what you need, and how funds will be used.</p>
+            </article>
+            <article class="card">
+                <h3>3. Submit & engage</h3>
+                <p>Upload to SocioVault, respond to community questions, and encourage supporters to vote.</p>
+            </article>
+        </div>
+
+        <div class="request-form-section">
+            <h3>Submit your help request</h3>
+            <form id="request-form" class="form-grid">
+                <input type="text" name="name" placeholder="Your name" required>
+                <input type="email" name="email" placeholder="your@email.com" required>
+                <textarea name="story" placeholder="Your story (be specific about what you need)" rows="4" required></textarea>
+                <input type="url" name="videoUrl" placeholder="Link to your video (optional)">
+                <input type="number" name="amount" placeholder="Amount needed ($)" min="1" step="0.01">
+                <button type="submit" class="btn primary">Submit request</button>
+            </form>
+        </div>
+    </section>
+
+    <section class="section strip" id="faq">
+        <h2>Frequently asked questions</h2>
+        <div class="faq-grid">
+            <article>
+                <h3>Is SocioVault a bank?</h3>
+                <p>SocioVault operates as a community treasury with audited accounts. We safeguard money like a bank but distribute it democratically.</p>
+            </article>
+            <article>
+                <h3>Can I withdraw my contribution?</h3>
+                <p>Yes. There’s a 48-hour reversal window before each weekly vote. After funds are allocated you can choose to pause future deposits.</p>
+            </article>
+            <article>
+                <h3>How do you prevent fraud?</h3>
+                <p>Every request is identity-checked, receipts are collected post-payout, and suspicious activity is reviewed by a rotating community council.</p>
+            </article>
+            <article>
+                <h3>What fees does SocioVault collect?</h3>
+                <p>We charge 3% to cover payment processing, moderation, and audits. Fee usage is disclosed in the ledger each month.</p>
+            </article>
+        </div>
+    </section>
+
+    <section class="section" id="join">
+        <h2>Join the SocioVault contributor list</h2>
+        <p>Get weekly balance snapshots, vote reminders, and impact stories straight to your inbox.</p>
+        
+        <div class="contribution-section">
+            <h3>Make a contribution</h3>
+            <form id="contribute-form" class="form-grid">
+                <input type="email" name="email" placeholder="your@email.com" required>
+                <input type="number" name="amount" placeholder="Amount ($)" min="1" step="0.01" required>
+                <textarea name="message" placeholder="Optional message (why you care)" rows="3"></textarea>
+                <button type="submit" class="btn primary">Contribute now</button>
+            </form>
+        </div>
+
+        <div class="subscribe-section">
+            <h3>Or just subscribe for updates</h3>
+            <form class="signup">
+                <input type="email" name="email" placeholder="you@example.com" required>
+                <button type="submit">Subscribe</button>
+            </form>
+        </div>
+    </section>
+
+    <footer class="footer">
+        <div class="footer-inner">
+            <div>
+                <span class="logo">SocioVault</span>
+                <p>Community-controlled social media bank. Every dollar tracked. Every decision voted.</p>
+            </div>
+            <div class="footer-links">
+                <a href="#how">How it works</a>
+                <a href="#safety">Safeguards</a>
+                <a href="#faq">FAQ</a>
+                <a href="mailto:partners@sociovault.co">partners@sociovault.co</a>
+            </div>
+        </div>
+        <p class="footer-copy">&copy; 2025 SocioVault Cooperative. All rights reserved.</p>
+    </footer>
+    <script src="script.js"></script>
+</body>
+</html>
