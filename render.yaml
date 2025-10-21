@@ -3,8 +3,9 @@ services:
     name: sociavault
     runtime: go
     runtimeVersion: 1.22
-    buildCommand: "cd signal-bank-landing && go build -o app main.go"
-    startCommand: "./signal-bank-landing/app"
+    dir: signal-bank-landing
+    buildCommand: "go build -o app main.go"
+    startCommand: "./app"
     envVars:
       - key: PORT
         value: "8081"
