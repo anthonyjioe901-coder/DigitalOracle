@@ -4,8 +4,13 @@
 set -e
 
 echo "📦 Installing Rust..."
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-source $HOME/.cargo/env
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --quiet
+
+echo "📦 Installing wasm-pack..."
+curl https://rustwasm.org/wasm-pack/installer/init.sh -sSf | sh
+
+echo "🔧 Setting up Rust environment..."
+export PATH="$HOME/.cargo/bin:$PATH"
 
 echo "🦀 Building Rust WebAssembly..."
 cd Auctmah/frontend
