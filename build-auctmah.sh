@@ -3,22 +3,19 @@
 
 set -e
 
-echo "📦 Installing Rust..."
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --quiet
-
-echo "📦 Installing wasm-pack..."
-curl https://rustwasm.org/wasm-pack/installer/init.sh -sSf | sh
-
-echo "🔧 Setting up Rust environment..."
 export PATH="$HOME/.cargo/bin:$PATH"
+
+echo "⏳ Installing wasm-pack..."
+cargo install wasm-pack
 
 echo "🦀 Building Rust WebAssembly..."
 cd Auctmah/frontend
 wasm-pack build --target web --release
 
-echo "📁 Setting up frontend..."
+echo "📁 Setting up frontend distribution..."
 mkdir -p dist
 cp index.html dist/
+cp -r pkg/* dist/ 2>/dev/null || true
 
 echo "🚀 Building Go backend..."
 cd ../..
