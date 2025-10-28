@@ -123,7 +123,7 @@ func main() {
 	http.HandleFunc("/ws", handleWebSocket)
 	http.HandleFunc("/api/auctions", handleAuctions)
 	http.HandleFunc("/api/bid", handlePlaceBid)
-	http.Handle("/", http.FileServer(http.Dir("./frontend")))
+	http.Handle("/", http.FileServer(http.Dir("./frontend/dist")))
 
 	go broadcastMessages()
 	go updateAuctionTimers()
