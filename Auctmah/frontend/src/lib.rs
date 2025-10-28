@@ -75,13 +75,13 @@ pub fn main() {
 // ============ WEBSOCKET CONNECTION ============
 fn connect_websocket(state: Rc<RefCell<AuctionState>>) {
     let window = window().expect("no global window");
-    let location = window.location();
-    let protocol = if location.protocol().unwrap_or_default() == "https:" {
+    let document = window.document().expect("no document");
+    let protocol = if document.location().unwrap().protocol().unwrap_or_default() == "https:" {
         "wss"
     } else {
         "ws"
     };
-    let host = location.host().unwrap_or_else(|_| "localhost:8080".to_string());
+    let host = document.location().unwrap().host().unwrap_or_else(|_| "localhost:8080".to_string());
     let ws_url = format!("{}://{}/ws", protocol, host);
     
     match WebSocket::new(&ws_url) {
@@ -90,7 +90,7 @@ fn connect_websocket(state: Rc<RefCell<AuctionState>>) {
             
             let state_clone = state.clone();
             let onmessage = wasm_bindgen::closure::Closure::wrap(Box::new(move |event: web_sys::MessageEvent| {
-                if let Ok(msg_str) = event.data().as_string() {
+                if let Some(msg_str) = event.data().as_string() {
                     if let Ok(msg) = serde_json::from_str::<Message>(&msg_str) {
                         handle_websocket_message(msg, state_clone.clone());
                     }
@@ -176,7 +176,7 @@ fn setup_canvas(state: Rc<RefCell<AuctionState>>) {
 fn render_loop(state: Rc<RefCell<AuctionState>>) {
     let state_clone = state.clone();
     
-    let closure = Rc::new(RefCell::new(None));
+    let closure: Rc<RefCell<Option<wasm_bindgen::closure::Closure<dyn FnMut()>>>> = Rc::new(RefCell::new(None));
     let closure_clone = closure.clone();
     
     *closure.borrow_mut() = Some(wasm_bindgen::closure::Closure::wrap(Box::new(move || {
@@ -202,7 +202,7 @@ fn render_frame(state: Rc<RefCell<AuctionState>>) {
     
     if let Some(ctx) = &state_ref.ctx {
         // Clear canvas
-        ctx.set_fill_style(&"#0a0e27".into()); // Dark background
+        ctx.set_fill_style(&wasm_bindgen::JsValue::from_str("#0a0e27"));
         ctx.fill_rect(0.0, 0.0, 1400.0, 800.0);
         
         // Draw grid
@@ -223,17 +223,17 @@ fn render_frame(state: Rc<RefCell<AuctionState>>) {
 
 // ============ DRAW HELPERS ============
 fn draw_header(ctx: &CanvasRenderingContext2d) {
-    ctx.set_fill_style(&"#00d4ff".into());
+    ctx.set_fill_style(&wasm_bindgen::JsValue::from_str("#00d4ff"));
     ctx.set_font("32px Arial Bold");
     ctx.fill_text("🔨 AUCTMAH - Live Auction Board", 50.0, 40.0).ok();
     
     ctx.set_font("14px Arial");
-    ctx.set_fill_style(&"#a0aec0".into());
+    ctx.set_fill_style(&wasm_bindgen::JsValue::from_str("#a0aec0"));
     ctx.fill_text("Real-time bidding powered by Rust + WebAssembly", 50.0, 65.0).ok();
 }
 
 fn draw_grid(ctx: &CanvasRenderingContext2d) {
-    ctx.set_stroke_style(&"rgba(0, 212, 255, 0.1)".into());
+    ctx.set_stroke_style(&wasm_bindgen::JsValue::from_str("rgba(0, 212, 255, 0.1)"));
     ctx.set_line_width(1.0);
     
     // Vertical lines
@@ -260,7 +260,7 @@ fn draw_auction_card(ctx: &CanvasRenderingContext2d, auction: &Auction, x: f64, 
     let h = 280.0;
     
     // Background
-    ctx.set_fill_style(&"rgba(17, 22, 51, 0.8)".into());
+    ctx.set_fill_style(&wasm_bindgen::JsValue::from_str("rgba(17, 22, 51, 0.8)"));
     ctx.fill_rect(x, y, w, h);
     
     // Border
@@ -269,12 +269,12 @@ fn draw_auction_card(ctx: &CanvasRenderingContext2d, auction: &Auction, x: f64, 
         "ended" => "#ff6b6b",
         _ => "#8b5cf6",
     };
-    ctx.set_stroke_style(&border_color.into());
+    ctx.set_stroke_style(&wasm_bindgen::JsValue::from_str(border_color));
     ctx.set_line_width(2.0);
     ctx.stroke_rect(x, y, w, h);
     
     // Title
-    ctx.set_fill_style(&"#00d4ff".into());
+    ctx.set_fill_style(&wasm_bindgen::JsValue::from_str("#00d4ff"));
     ctx.set_font("16px Arial Bold");
     ctx.fill_text(&auction.title, x + 15.0, y + 30.0).ok();
     
@@ -284,25 +284,25 @@ fn draw_auction_card(ctx: &CanvasRenderingContext2d, auction: &Auction, x: f64, 
         "ended" => "#ff6b6b",
         _ => "#8b5cf6",
     };
-    ctx.set_fill_style(&status_bg.into());
+    ctx.set_fill_style(&wasm_bindgen::JsValue::from_str(status_bg));
     ctx.fill_rect(x + w - 110.0, y + 10.0, 100.0, 25.0);
     
-    ctx.set_fill_style(&"#0a0e27".into());
+    ctx.set_fill_style(&wasm_bindgen::JsValue::from_str("#0a0e27"));
     ctx.set_font("12px Arial Bold");
     ctx.fill_text(&auction.status.to_uppercase(), x + w - 95.0, y + 27.0).ok();
     
     // Current bid (LARGE)
-    ctx.set_fill_style(&"#ff6b6b".into());
+    ctx.set_fill_style(&wasm_bindgen::JsValue::from_str("#ff6b6b"));
     ctx.set_font("28px Arial Bold");
     ctx.fill_text(&format!("${:.0}", auction.current_bid), x + 15.0, y + 80.0).ok();
     
     // Bid count
-    ctx.set_fill_style(&"#a0aec0".into());
+    ctx.set_fill_style(&wasm_bindgen::JsValue::from_str("#a0aec0"));
     ctx.set_font("12px Arial");
     ctx.fill_text(&format!("Bids: {}", auction.bid_count), x + 15.0, y + 110.0).ok();
     
     // Highest bidder
-    ctx.set_fill_style(&"#a0aec0".into());
+    ctx.set_fill_style(&wasm_bindgen::JsValue::from_str("#a0aec0"));
     ctx.set_font("12px Arial");
     ctx.fill_text(&format!("Leader: {}", &auction.highest_bidder[..std::cmp::min(15, auction.highest_bidder.len())]), x + 15.0, y + 130.0).ok();
     
@@ -310,7 +310,7 @@ fn draw_auction_card(ctx: &CanvasRenderingContext2d, auction: &Auction, x: f64, 
     draw_progress_bar(ctx, x + 15.0, y + 170.0, 370.0, 15.0);
     
     // Description
-    ctx.set_fill_style(&"#a0aec0".into());
+    ctx.set_fill_style(&wasm_bindgen::JsValue::from_str("#a0aec0"));
     ctx.set_font("11px Arial");
     let desc = if auction.description.len() > 40 {
         &auction.description[..40]
@@ -320,22 +320,20 @@ fn draw_auction_card(ctx: &CanvasRenderingContext2d, auction: &Auction, x: f64, 
     ctx.fill_text(desc, x + 15.0, y + 220.0).ok();
     
     // Bottom action
-    ctx.set_fill_style(&"rgba(0, 212, 255, 0.2)".into());
+    ctx.set_fill_style(&wasm_bindgen::JsValue::from_str("rgba(0, 212, 255, 0.2)"));
     ctx.fill_rect(x + 15.0, y + 240.0, 370.0, 30.0);
     
-    ctx.set_fill_style(&"#00d4ff".into());
+    ctx.set_fill_style(&wasm_bindgen::JsValue::from_str("#00d4ff"));
     ctx.set_font("14px Arial Bold");
     ctx.fill_text("Click to bid →", x + 160.0, y + 260.0).ok();
-}
-
-fn draw_progress_bar(ctx: &CanvasRenderingContext2d, x: f64, y: f64, w: f64, h: f64) {
+}fn draw_progress_bar(ctx: &CanvasRenderingContext2d, x: f64, y: f64, w: f64, h: f64) {
     // Background
-    ctx.set_fill_style(&"rgba(255, 107, 107, 0.2)".into());
+    ctx.set_fill_style(&JsValue::from_str("rgba(255, 107, 107, 0.2)"));
     ctx.fill_rect(x, y, w, h);
     
     // Progress (animate)
     let progress = ((js_sys::Date::now() as u32 % 10000) as f64 / 10000.0) * 100.0;
-    ctx.set_fill_style(&"#ff6b6b".into());
+    ctx.set_fill_style(&JsValue::from_str("#ff6b6b"));
     ctx.fill_rect(x, y, w * (progress / 100.0), h);
 }
 
