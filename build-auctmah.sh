@@ -3,6 +3,9 @@
 
 set -e
 
+echo "📦 Installing Rust..."
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --quiet
+
 export PATH="$HOME/.cargo/bin:$PATH"
 
 echo "⏳ Installing wasm-pack..."
