@@ -100,6 +100,130 @@
             transform: scale(1.05);
             box-shadow: 0 0 20px rgba(0, 212, 255, 0.4);
         }
+        
+        /* Sell Item Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal.active {
+            display: flex;
+        }
+        
+        .modal-content {
+            background: linear-gradient(135deg, #1a1f4a 0%, #0a0e27 100%);
+            border: 2px solid #00d4ff;
+            border-radius: 12px;
+            padding: 30px;
+            max-width: 500px;
+            width: 90%;
+            box-shadow: 0 0 40px rgba(0, 212, 255, 0.3);
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+        }
+        
+        .modal-header h2 {
+            color: #00d4ff;
+            font-size: 24px;
+        }
+        
+        .close-btn {
+            background: none;
+            border: none;
+            color: #00d4ff;
+            font-size: 28px;
+            cursor: pointer;
+            line-height: 1;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            color: #a0aec0;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+        
+        .form-group input,
+        .form-group textarea {
+            width: 100%;
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(0, 212, 255, 0.3);
+            color: white;
+            border-radius: 6px;
+            font-size: 14px;
+            font-family: inherit;
+        }
+        
+        .form-group textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+        
+        .form-group input::placeholder,
+        .form-group textarea::placeholder {
+            color: rgba(255, 255, 255, 0.4);
+        }
+        
+        .form-group input:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #00d4ff;
+            box-shadow: 0 0 10px rgba(0, 212, 255, 0.2);
+        }
+        
+        .submit-btn {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #00d4ff, #8b5cf6);
+            border: none;
+            color: white;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 16px;
+            transition: all 0.3s ease;
+        }
+        
+        .submit-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(0, 212, 255, 0.4);
+        }
+        
+        #sell-btn {
+            padding: 8px 20px;
+            background: linear-gradient(135deg, #8b5cf6, #00d4ff);
+            border: none;
+            color: white;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            margin-right: 10px;
+        }
+        
+        #sell-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 20px rgba(139, 92, 246, 0.4);
+        }
     </style>
 </head>
 <body>
@@ -116,9 +240,43 @@
                 </div>
             </div>
             <div class="bid-input-form">
+                <button id="sell-btn">🏷️ Sell Item</button>
                 <input id="bid-amount" type="number" placeholder="Bid amount ($)" min="0" step="0.01">
                 <button id="bid-btn">Place Bid</button>
             </div>
+        </div>
+    </div>
+    
+    <!-- Sell Item Modal -->
+    <div id="sell-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>🏷️ List Your Item for Auction</h2>
+                <button class="close-btn" id="close-modal">&times;</button>
+            </div>
+            <form id="sell-form">
+                <div class="form-group">
+                    <label>Item Name *</label>
+                    <input type="text" id="item-name" placeholder="e.g., Vintage Rolex Watch" required>
+                </div>
+                <div class="form-group">
+                    <label>Description *</label>
+                    <textarea id="item-description" placeholder="Describe your item (condition, year, authenticity, etc.)" required></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Starting Price ($) *</label>
+                    <input type="number" id="starting-price" placeholder="100" min="1" step="0.01" required>
+                </div>
+                <div class="form-group">
+                    <label>Auction Duration</label>
+                    <input type="number" id="duration" placeholder="Days (default: 7)" min="1" max="30" value="7">
+                </div>
+                <div class="form-group">
+                    <label>Your Email *</label>
+                    <input type="email" id="seller-email" placeholder="your@email.com" required>
+                </div>
+                <button type="submit" class="submit-btn">Submit for Auction 🚀</button>
+            </form>
         </div>
     </div>
     
@@ -129,6 +287,58 @@
             console.log('🚀 Initializing Auctmah...');
             await init();
             console.log('✅ Rust+WASM loaded successfully');
+            
+            // Modal controls
+            const modal = document.getElementById('sell-modal');
+            const sellBtn = document.getElementById('sell-btn');
+            const closeBtn = document.getElementById('close-modal');
+            
+            sellBtn.addEventListener('click', () => {
+                modal.classList.add('active');
+            });
+            
+            closeBtn.addEventListener('click', () => {
+                modal.classList.remove('active');
+            });
+            
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    modal.classList.remove('active');
+                }
+            });
+            
+            // Sell form submission
+            document.getElementById('sell-form').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                
+                const formData = {
+                    name: document.getElementById('item-name').value,
+                    description: document.getElementById('item-description').value,
+                    startPrice: parseFloat(document.getElementById('starting-price').value),
+                    duration: parseInt(document.getElementById('duration').value),
+                    email: document.getElementById('seller-email').value,
+                    timestamp: new Date().toISOString()
+                };
+                
+                try {
+                    const response = await fetch('/api/create-auction', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(formData)
+                    });
+                    
+                    if (response.ok) {
+                        alert('✅ Your item has been submitted for auction!\n\nOur team will review it within 24 hours and contact you via email.');
+                        modal.classList.remove('active');
+                        document.getElementById('sell-form').reset();
+                    } else {
+                        alert('❌ Failed to submit. Please try again.');
+                    }
+                } catch (error) {
+                    console.error('Submission error:', error);
+                    alert('❌ Network error. Please check your connection.');
+                }
+            });
             
             // Bid button handler
             document.getElementById('bid-btn').addEventListener('click', () => {

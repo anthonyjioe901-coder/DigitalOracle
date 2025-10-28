@@ -39,6 +39,15 @@ type Message struct {
 	Error   string     `json:"error,omitempty"`
 }
 
+type AuctionSubmission struct {
+	Name         string  `json:"name"`
+	Description  string  `json:"description"`
+	StartPrice   float64 `json:"startPrice"`
+	Duration     int     `json:"duration"`
+	Email        string  `json:"email"`
+	Timestamp    string  `json:"timestamp"`
+}
+
 // ============ GLOBAL STATE ============
 var (
 	upgrader = websocket.Upgrader{
@@ -143,6 +152,7 @@ func main() {
 	http.HandleFunc("/ws", handleWebSocket)
 	http.HandleFunc("/api/auctions", handleAuctions)
 	http.HandleFunc("/api/bid", handlePlaceBid)
+	http.HandleFunc("/api/create-auction", handleCreateAuction)
 	http.Handle("/", http.FileServer(http.Dir(getFrontendPath())))
 
 	go broadcastMessages()
@@ -322,6 +332,57 @@ func handlePlaceBid(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusAccepted)
 	json.NewEncoder(w).Encode(map[string]string{"status": "bid received"})
+}
+
+// ============ CREATE AUCTION HANDLER ============
+func handleCreateAuction(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	if r.Method == http.MethodOptions {
+		w.Header().Set("Access-Control-Allow-Methods", "POST")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var submission AuctionSubmission
+	if err := json.NewDecoder(r.Body).Decode(&submission); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Simple validation
+	if submission.Name == "" || submission.Description == "" || submission.StartPrice <= 0 || submission.Email == "" {
+		http.Error(w, "Missing required fields", http.StatusBadRequest)
+		return
+	}
+
+	// Save to file (simple persistence)
+	file, err := os.OpenFile("auction_submissions.json", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		log.Println("Error opening submissions file:", err)
+		http.Error(w, "Server error", http.StatusInternalServerError)
+		return
+	}
+	defer file.Close()
+
+	submissionData, _ := json.Marshal(submission)
+	file.Write(submissionData)
+	file.WriteString("\n")
+
+	log.Printf("📝 New auction submission: %s (Starting price: $%.2f, Email: %s)", 
+		submission.Name, submission.StartPrice, submission.Email)
+
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]string{
+		"status": "success",
+		"message": "Auction submission received. We'll contact you within 24 hours.",
+	})
 }
 
 // ============ CLIENT HELPERS ============
