@@ -118,12 +118,32 @@ func init() {
 	}
 }
 
+// ============ FRONTEND PATH DETECTION ============
+func getFrontendPath() string {
+	// Try different paths based on where the binary is run from
+	paths := []string{
+		"./frontend/dist",           // Running from Auctmah/
+		"./Auctmah/frontend/dist",   // Running from repo root
+	}
+	
+	for _, path := range paths {
+		if _, err := os.Stat(path); err == nil {
+			fmt.Printf("📂 Serving frontend from: %s\n", path)
+			return path
+		}
+	}
+	
+	// Default to first path
+	fmt.Printf("⚠️  Frontend path not found, using default: ./frontend/dist\n")
+	return "./frontend/dist"
+}
+
 // ============ MAIN ============
 func main() {
 	http.HandleFunc("/ws", handleWebSocket)
 	http.HandleFunc("/api/auctions", handleAuctions)
 	http.HandleFunc("/api/bid", handlePlaceBid)
-	http.Handle("/", http.FileServer(http.Dir("./frontend/dist")))
+	http.Handle("/", http.FileServer(http.Dir(getFrontendPath())))
 
 	go broadcastMessages()
 	go updateAuctionTimers()
