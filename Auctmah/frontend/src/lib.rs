@@ -75,13 +75,13 @@ pub fn main() {
 // ============ WEBSOCKET CONNECTION ============
 fn connect_websocket(state: Rc<RefCell<AuctionState>>) {
     let window = window().expect("no global window");
-    let document = window.document().expect("no document");
-    let protocol = if document.location().unwrap().protocol().unwrap_or_default() == "https:" {
+    let location = window.location();
+    let protocol = if location.protocol().unwrap_or_default() == "https:" {
         "wss"
     } else {
         "ws"
     };
-    let host = document.location().unwrap().host().unwrap_or_else(|_| "localhost:8080".to_string());
+    let host = location.host().unwrap_or_else(|_| "localhost:8080".to_string());
     let ws_url = format!("{}://{}/ws", protocol, host);
     
     match WebSocket::new(&ws_url) {
@@ -342,7 +342,7 @@ fn draw_auction_card(ctx: &CanvasRenderingContext2d, auction: &Auction, x: f64, 
 pub fn place_bid(auction_id: String, amount: f64) {
     log(&format!("💰 Placing bid on {} for ${}", auction_id, amount));
     
-    if let Some(window) = window() {
+    if let Some(_window) = window() {
         if let Some(ws) = get_websocket() {
             let bid = Bid {
                 bidder_id: format!("bidder_{}", js_sys::Date::now() as u32),
