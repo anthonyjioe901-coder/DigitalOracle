@@ -18,7 +18,9 @@ wasm-pack build --target web --release
 echo "📁 Setting up frontend distribution..."
 mkdir -p dist
 cp index.html dist/
-cp -r pkg/* dist/ 2>/dev/null || true
+cp pkg/*.js dist/ 2>/dev/null || true
+cp pkg/*.wasm dist/ 2>/dev/null || true
+ls -la dist/
 
 echo "📦 Installing Go dependencies..."
 cd ..
