@@ -20,8 +20,13 @@ mkdir -p dist
 cp index.html dist/
 cp -r pkg/* dist/ 2>/dev/null || true
 
-echo "🚀 Building Go backend..."
-cd ../..
-go build -o Auctmah/app Auctmah/main.go
+echo "📦 Installing Go dependencies..."
+cd ..
+go mod download
+go mod tidy
 
+echo " Building Go backend..."
+go build -o app main.go
+
+cd ..
 echo "✅ Build complete!"
