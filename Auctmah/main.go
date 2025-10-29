@@ -61,6 +61,8 @@ var (
 	clientsMutex  sync.RWMutex
 
 	broadcast     = make(chan Message, 256)
+	
+	startTime     = time.Now()
 )
 
 type Client struct {
@@ -150,6 +152,7 @@ func getFrontendPath() string {
 // ============ MAIN ============
 func main() {
 	http.HandleFunc("/ws", handleWebSocket)
+	http.HandleFunc("/api/health", handleHealth)
 	http.HandleFunc("/api/auctions", handleAuctions)
 	http.HandleFunc("/api/bid", handlePlaceBid)
 	http.HandleFunc("/api/create-auction", handleCreateAuction)
@@ -204,6 +207,42 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	auctionMutex.RUnlock()
 
 	go readMessages(client)
+}
+
+// ============ HEALTH CHECK HANDLER ============
+func handleHealth(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+
+	if r.Method == http.MethodOptions {
+		w.Header().Set("Access-Control-Allow-Methods", "GET")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		return
+	}
+
+	// Check system health
+	auctionMutex.RLock()
+	auctionCount := len(auctions)
+	auctionMutex.RUnlock()
+
+	clientsMutex.RLock()
+	clientCount := len(clients)
+	clientsMutex.RUnlock()
+
+	uptime := time.Since(startTime)
+
+	health := map[string]interface{}{
+		"status":        "healthy",
+		"timestamp":     time.Now().Unix(),
+		"uptime_seconds": int(uptime.Seconds()),
+		"auctions":      auctionCount,
+		"active_clients": clientCount,
+		"version":       "1.0.0",
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(health)
 }
 
 // ============ MESSAGE READER ============

@@ -368,6 +368,136 @@
             font-size: 16px;
         }
         
+        /* Connection Status Banner */
+        .connection-banner {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(135deg, #ff6b6b, #ee5a52);
+            color: white;
+            padding: 12px 20px;
+            text-align: center;
+            z-index: 10000;
+            transform: translateY(-100%);
+            transition: transform 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+        }
+        
+        .connection-banner.visible {
+            transform: translateY(0);
+        }
+        
+        .connection-banner.success {
+            background: linear-gradient(135deg, #00ff88, #00d4aa);
+        }
+        
+        .retry-btn {
+            padding: 6px 16px;
+            background: white;
+            color: #ff6b6b;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s ease;
+        }
+        
+        .retry-btn:hover {
+            transform: scale(1.05);
+        }
+        
+        /* Error State */
+        .error-state {
+            display: none;
+            text-align: center;
+            padding: 60px 20px;
+            color: #a0aec0;
+        }
+        
+        .error-state.active {
+            display: block;
+        }
+        
+        .error-icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+        }
+        
+        .error-title {
+            font-size: 24px;
+            color: #ff6b6b;
+            margin-bottom: 12px;
+        }
+        
+        .error-description {
+            margin-bottom: 24px;
+            line-height: 1.6;
+        }
+        
+        .error-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+        }
+        
+        .action-btn {
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #00d4ff, #8b5cf6);
+            border: none;
+            color: white;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        
+        .action-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 212, 255, 0.4);
+        }
+        
+        .action-btn.secondary {
+            background: rgba(255, 255, 255, 0.1);
+        }
+        
+        /* Health Status Indicator */
+        .health-indicator {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(17, 22, 51, 0.95);
+            border: 1px solid rgba(0, 212, 255, 0.3);
+            border-radius: 8px;
+            padding: 12px 16px;
+            font-size: 12px;
+            color: #a0aec0;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .health-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #00ff88;
+            animation: pulse 2s infinite;
+        }
+        
+        .health-dot.warning {
+            background: #ffd700;
+        }
+        
+        .health-dot.error {
+            background: #ff6b6b;
+            animation: none;
+        }
+        
         /* Accessibility */
         *:focus {
             outline: 2px solid #00d4ff;
@@ -388,8 +518,29 @@
     </style>
 </head>
 <body>
+    <!-- Connection Status Banner -->
+    <div id="connection-banner" class="connection-banner" role="alert" aria-live="assertive">
+        <span id="banner-message">Connecting to server...</span>
+        <button id="retry-connection" class="retry-btn" style="display: none;">Retry</button>
+    </div>
+    
     <div id="app">
         <canvas id="auction-canvas"></canvas>
+        
+        <!-- Error State (shown when backend is down) -->
+        <div id="error-state" class="error-state">
+            <div class="error-icon">⚠️</div>
+            <div class="error-title">Unable to Connect</div>
+            <div class="error-description">
+                We're having trouble connecting to the auction server.<br>
+                Please check your internet connection or try again in a moment.
+            </div>
+            <div class="error-actions">
+                <button class="action-btn" onclick="location.reload()">Reload Page</button>
+                <button class="action-btn secondary" id="check-status-btn">Check Status</button>
+            </div>
+        </div>
+        
         <div class="info-bar">
             <div class="status">
                 <div class="status-item">
@@ -460,8 +611,184 @@
         </div>
     </div>
     
+    <!-- Health Status Indicator -->
+    <div id="health-indicator" class="health-indicator" style="display: none;">
+        <div class="health-dot" id="health-dot"></div>
+        <span id="health-text">Server Online</span>
+    </div>
+    
     <script type="module">
         import init, { place_bid } from './auctmah_frontend.js';
+        
+        // ============ HEALTH CHECK & CONNECTION MONITORING ============
+        let isServerHealthy = false;
+        let healthCheckInterval = null;
+        let connectionRetries = 0;
+        const MAX_RETRIES = 3;
+        const HEALTH_CHECK_TIMEOUT = 5000; // 5 seconds
+        const HEALTH_CHECK_INTERVAL = 30000; // 30 seconds
+        
+        async function checkServerHealth() {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), HEALTH_CHECK_TIMEOUT);
+            
+            try {
+                const response = await fetch('/api/health', {
+                    method: 'GET',
+                    signal: controller.signal,
+                    cache: 'no-cache'
+                });
+                
+                clearTimeout(timeoutId);
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    updateHealthIndicator('healthy', `Server: ${data.status || 'Online'}`);
+                    return true;
+                }
+                return false;
+            } catch (error) {
+                clearTimeout(timeoutId);
+                if (error.name === 'AbortError') {
+                    console.warn('Health check timed out');
+                    updateHealthIndicator('timeout', 'Server: Timeout');
+                } else {
+                    console.error('Health check failed:', error);
+                    updateHealthIndicator('error', 'Server: Offline');
+                }
+                return false;
+            }
+        }
+        
+        async function checkAuctionAPI() {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), HEALTH_CHECK_TIMEOUT);
+            
+            try {
+                const response = await fetch('/api/auctions', {
+                    method: 'GET',
+                    signal: controller.signal,
+                    cache: 'no-cache'
+                });
+                
+                clearTimeout(timeoutId);
+                return response.ok;
+            } catch (error) {
+                clearTimeout(timeoutId);
+                console.error('Auction API check failed:', error);
+                return false;
+            }
+        }
+        
+        function updateHealthIndicator(status, text) {
+            const indicator = document.getElementById('health-indicator');
+            const dot = document.getElementById('health-dot');
+            const healthText = document.getElementById('health-text');
+            
+            indicator.style.display = 'flex';
+            dot.className = 'health-dot';
+            
+            if (status === 'healthy') {
+                dot.classList.add('success');
+                healthText.textContent = text;
+            } else if (status === 'timeout') {
+                dot.classList.add('warning');
+                healthText.textContent = text;
+            } else {
+                dot.classList.add('error');
+                healthText.textContent = text;
+            }
+        }
+        
+        function showConnectionBanner(message, type = 'error', showRetry = false) {
+            const banner = document.getElementById('connection-banner');
+            const bannerMessage = document.getElementById('banner-message');
+            const retryBtn = document.getElementById('retry-connection');
+            
+            bannerMessage.textContent = message;
+            banner.className = `connection-banner visible ${type}`;
+            retryBtn.style.display = showRetry ? 'block' : 'none';
+        }
+        
+        function hideConnectionBanner() {
+            const banner = document.getElementById('connection-banner');
+            banner.classList.remove('visible');
+        }
+        
+        function showErrorState() {
+            document.getElementById('error-state').classList.add('active');
+            document.getElementById('auction-canvas').style.display = 'none';
+            document.querySelector('.info-bar').style.display = 'none';
+        }
+        
+        function hideErrorState() {
+            document.getElementById('error-state').classList.remove('active');
+            document.getElementById('auction-canvas').style.display = 'block';
+            document.querySelector('.info-bar').style.display = 'flex';
+        }
+        
+        async function initializeWithRetry() {
+            showConnectionBanner('Checking server connection...', 'warning');
+            
+            // First, check if server is healthy
+            const serverHealthy = await checkServerHealth();
+            
+            if (!serverHealthy) {
+                connectionRetries++;
+                
+                if (connectionRetries < MAX_RETRIES) {
+                    showConnectionBanner(
+                        `Connection attempt ${connectionRetries}/${MAX_RETRIES}...`, 
+                        'warning'
+                    );
+                    setTimeout(initializeWithRetry, 2000);
+                    return false;
+                } else {
+                    showConnectionBanner(
+                        'Unable to connect to server. Please check your connection.', 
+                        'error', 
+                        true
+                    );
+                    showErrorState();
+                    document.getElementById('loading-overlay').classList.remove('active');
+                    return false;
+                }
+            }
+            
+            // Server is healthy, check auction API
+            const auctionAPIHealthy = await checkAuctionAPI();
+            
+            if (!auctionAPIHealthy) {
+                showConnectionBanner(
+                    'Auction API unavailable. Some features may not work.', 
+                    'warning'
+                );
+            } else {
+                isServerHealthy = true;
+                showConnectionBanner('Connected successfully!', 'success');
+                setTimeout(hideConnectionBanner, 3000);
+            }
+            
+            return true;
+        }
+        
+        // Start periodic health checks
+        function startHealthMonitoring() {
+            healthCheckInterval = setInterval(async () => {
+                const healthy = await checkServerHealth();
+                if (!healthy && isServerHealthy) {
+                    isServerHealthy = false;
+                    showConnectionBanner(
+                        'Connection lost. Attempting to reconnect...', 
+                        'warning'
+                    );
+                } else if (healthy && !isServerHealthy) {
+                    isServerHealthy = true;
+                    showConnectionBanner('Connection restored!', 'success');
+                    setTimeout(hideConnectionBanner, 3000);
+                }
+            }, HEALTH_CHECK_INTERVAL);
+        }
         
         // ============ UTILITY FUNCTIONS ============
         function showToast(type, title, message) {
@@ -540,6 +867,13 @@
         (async () => {
             console.log('🚀 Initializing Auctmah...');
             
+            // Check server health first
+            const serverReady = await initializeWithRetry();
+            
+            if (!serverReady) {
+                return; // Stop initialization if server is not available
+            }
+            
             try {
                 await init();
                 console.log('✅ Rust+WASM loaded successfully');
@@ -549,11 +883,35 @@
                     document.getElementById('loading-overlay').classList.remove('active');
                 }, 500);
                 
+                // Start health monitoring
+                startHealthMonitoring();
+                
             } catch (error) {
                 console.error('❌ Failed to initialize WASM:', error);
                 document.querySelector('.loading-text').textContent = 'Failed to load. Please refresh.';
                 showToast('error', 'Loading Error', 'Failed to initialize auction system. Please refresh the page.');
+                showConnectionBanner('Application failed to load', 'error', true);
             }
+            
+            // ============ RETRY CONNECTION HANDLER ============
+            document.getElementById('retry-connection').addEventListener('click', () => {
+                connectionRetries = 0;
+                hideErrorState();
+                document.getElementById('loading-overlay').classList.add('active');
+                document.querySelector('.loading-text').textContent = 'Reconnecting...';
+                location.reload();
+            });
+            
+            document.getElementById('check-status-btn').addEventListener('click', async () => {
+                showToast('info', 'Checking Status', 'Verifying server connection...');
+                const healthy = await checkServerHealth();
+                if (healthy) {
+                    showToast('success', 'Server Online', 'Connection successful! Reloading...');
+                    setTimeout(() => location.reload(), 1500);
+                } else {
+                    showToast('error', 'Still Offline', 'Server is still unavailable. Please try again later.');
+                }
+            });
             
             // ============ MODAL CONTROLS ============
             const modal = document.getElementById('sell-modal');
@@ -607,6 +965,17 @@
             form.addEventListener('submit', async (e) => {
                 e.preventDefault();
                 
+                // Check server health before submission
+                if (!isServerHealthy) {
+                    const healthy = await checkServerHealth();
+                    if (!healthy) {
+                        showToast('error', 'Server Unavailable', 
+                            'Cannot submit right now. Please try again in a moment.');
+                        return;
+                    }
+                    isServerHealthy = true;
+                }
+                
                 // Validate all fields
                 let isValid = true;
                 fields.forEach(field => {
@@ -633,12 +1002,18 @@
                 
                 setLoading('submit-auction-btn', true);
                 
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+                
                 try {
                     const response = await fetch('/api/create-auction', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(formData)
+                        body: JSON.stringify(formData),
+                        signal: controller.signal
                     });
+                    
+                    clearTimeout(timeoutId);
                     
                     if (response.ok) {
                         showToast('success', 'Submission Received!', 
@@ -654,8 +1029,17 @@
                         showToast('error', 'Submission Failed', error || 'Please try again later');
                     }
                 } catch (error) {
+                    clearTimeout(timeoutId);
                     console.error('Submission error:', error);
-                    showToast('error', 'Network Error', 'Please check your connection and try again');
+                    
+                    if (error.name === 'AbortError') {
+                        showToast('error', 'Request Timeout', 
+                            'The server took too long to respond. Please try again.');
+                    } else {
+                        showToast('error', 'Network Error', 
+                            'Please check your connection and try again');
+                        isServerHealthy = false;
+                    }
                 } finally {
                     setLoading('submit-auction-btn', false);
                 }
