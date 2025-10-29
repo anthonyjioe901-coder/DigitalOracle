@@ -224,6 +224,167 @@
             transform: scale(1.05);
             box-shadow: 0 0 20px rgba(139, 92, 246, 0.4);
         }
+        
+        /* Loading Spinner */
+        .spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: #00d4ff;
+            animation: spin 0.8s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .btn-loading {
+            opacity: 0.7;
+            pointer-events: none;
+        }
+        
+        /* Toast Notifications */
+        .toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: linear-gradient(135deg, #1a1f4a, #0a0e27);
+            border: 2px solid #00d4ff;
+            border-radius: 8px;
+            padding: 16px 20px;
+            color: white;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+            z-index: 2000;
+            min-width: 300px;
+            animation: slideIn 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .toast.success {
+            border-color: #00ff88;
+        }
+        
+        .toast.error {
+            border-color: #ff6b6b;
+        }
+        
+        .toast-icon {
+            font-size: 24px;
+        }
+        
+        .toast-content {
+            flex: 1;
+        }
+        
+        .toast-title {
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+        
+        .toast-message {
+            font-size: 13px;
+            opacity: 0.9;
+        }
+        
+        @keyframes slideIn {
+            from {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        
+        /* Form Validation */
+        .form-group.error input,
+        .form-group.error textarea {
+            border-color: #ff6b6b;
+        }
+        
+        .form-group.success input,
+        .form-group.success textarea {
+            border-color: #00ff88;
+        }
+        
+        .error-message {
+            color: #ff6b6b;
+            font-size: 12px;
+            margin-top: 4px;
+            display: none;
+        }
+        
+        .form-group.error .error-message {
+            display: block;
+        }
+        
+        .char-count {
+            font-size: 11px;
+            color: #a0aec0;
+            text-align: right;
+            margin-top: 4px;
+        }
+        
+        /* Loading Overlay */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(10, 14, 39, 0.95);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+        
+        .loading-overlay.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+        
+        .loading-spinner {
+            width: 60px;
+            height: 60px;
+            border: 4px solid rgba(0, 212, 255, 0.2);
+            border-radius: 50%;
+            border-top-color: #00d4ff;
+            animation: spin 1s linear infinite;
+        }
+        
+        .loading-text {
+            margin-top: 20px;
+            color: #00d4ff;
+            font-size: 16px;
+        }
+        
+        /* Accessibility */
+        *:focus {
+            outline: 2px solid #00d4ff;
+            outline-offset: 2px;
+        }
+        
+        .visually-hidden {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border-width: 0;
+        }
     </style>
 </head>
 <body>
@@ -247,6 +408,12 @@
         </div>
     </div>
     
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay active" role="status" aria-live="polite">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">Loading Auctions...</div>
+    </div>
+    
     <!-- Sell Item Modal -->
     <div id="sell-modal" class="modal">
         <div class="modal-content">
@@ -256,26 +423,39 @@
             </div>
             <form id="sell-form">
                 <div class="form-group">
-                    <label>Item Name *</label>
-                    <input type="text" id="item-name" placeholder="e.g., Vintage Rolex Watch" required>
+                    <label for="item-name">Item Name *</label>
+                    <input type="text" id="item-name" placeholder="e.g., Vintage Rolex Watch" required 
+                           minlength="3" maxlength="100" aria-required="true">
+                    <span class="error-message">Item name must be 3-100 characters</span>
                 </div>
                 <div class="form-group">
-                    <label>Description *</label>
-                    <textarea id="item-description" placeholder="Describe your item (condition, year, authenticity, etc.)" required></textarea>
+                    <label for="item-description">Description *</label>
+                    <textarea id="item-description" placeholder="Describe your item (condition, year, authenticity, etc.)" 
+                              required minlength="20" maxlength="500" aria-required="true"></textarea>
+                    <span class="char-count"><span id="desc-count">0</span>/500</span>
+                    <span class="error-message">Description must be 20-500 characters</span>
                 </div>
                 <div class="form-group">
-                    <label>Starting Price ($) *</label>
-                    <input type="number" id="starting-price" placeholder="100" min="1" step="0.01" required>
+                    <label for="starting-price">Starting Price ($) *</label>
+                    <input type="number" id="starting-price" placeholder="100" min="1" max="1000000" 
+                           step="0.01" required aria-required="true">
+                    <span class="error-message">Price must be between $1 and $1,000,000</span>
                 </div>
                 <div class="form-group">
-                    <label>Auction Duration</label>
-                    <input type="number" id="duration" placeholder="Days (default: 7)" min="1" max="30" value="7">
+                    <label for="duration">Auction Duration (days)</label>
+                    <input type="number" id="duration" placeholder="7" min="1" max="30" value="7" 
+                           aria-label="Auction duration in days">
+                    <span class="error-message">Duration must be 1-30 days</span>
                 </div>
                 <div class="form-group">
-                    <label>Your Email *</label>
-                    <input type="email" id="seller-email" placeholder="your@email.com" required>
+                    <label for="seller-email">Your Email *</label>
+                    <input type="email" id="seller-email" placeholder="your@email.com" required 
+                           aria-required="true">
+                    <span class="error-message">Please enter a valid email address</span>
                 </div>
-                <button type="submit" class="submit-btn">Submit for Auction 🚀</button>
+                <button type="submit" class="submit-btn" id="submit-auction-btn">
+                    <span class="btn-text">Submit for Auction 🚀</span>
+                </button>
             </form>
         </div>
     </div>
@@ -283,18 +463,106 @@
     <script type="module">
         import init, { place_bid } from './auctmah_frontend.js';
         
+        // ============ UTILITY FUNCTIONS ============
+        function showToast(type, title, message) {
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.innerHTML = `
+                <div class="toast-icon">${type === 'success' ? '✅' : '❌'}</div>
+                <div class="toast-content">
+                    <div class="toast-title">${title}</div>
+                    <div class="toast-message">${message}</div>
+                </div>
+            `;
+            document.body.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.style.animation = 'slideIn 0.3s ease reverse';
+                setTimeout(() => toast.remove(), 300);
+            }, 4000);
+        }
+        
+        function setLoading(buttonId, isLoading) {
+            const btn = document.getElementById(buttonId);
+            if (isLoading) {
+                btn.classList.add('btn-loading');
+                btn.innerHTML = '<span class="spinner"></span> Processing...';
+            } else {
+                btn.classList.remove('btn-loading');
+                btn.querySelector('.btn-text').textContent = 'Submit for Auction 🚀';
+            }
+        }
+        
+        function validateField(field) {
+            const group = field.closest('.form-group');
+            const value = field.value.trim();
+            
+            group.classList.remove('error', 'success');
+            
+            // Field-specific validation
+            if (field.id === 'item-name') {
+                if (value.length < 3 || value.length > 100) {
+                    group.classList.add('error');
+                    return false;
+                }
+            } else if (field.id === 'item-description') {
+                if (value.length < 20 || value.length > 500) {
+                    group.classList.add('error');
+                    return false;
+                }
+            } else if (field.id === 'starting-price') {
+                const price = parseFloat(value);
+                if (isNaN(price) || price < 1 || price > 1000000) {
+                    group.classList.add('error');
+                    return false;
+                }
+            } else if (field.id === 'duration') {
+                const days = parseInt(value);
+                if (isNaN(days) || days < 1 || days > 30) {
+                    group.classList.add('error');
+                    return false;
+                }
+            } else if (field.id === 'seller-email') {
+                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                if (!emailRegex.test(value)) {
+                    group.classList.add('error');
+                    return false;
+                }
+            }
+            
+            if (value) {
+                group.classList.add('success');
+            }
+            return true;
+        }
+        
+        // ============ INITIALIZATION ============
         (async () => {
             console.log('🚀 Initializing Auctmah...');
-            await init();
-            console.log('✅ Rust+WASM loaded successfully');
             
-            // Modal controls
+            try {
+                await init();
+                console.log('✅ Rust+WASM loaded successfully');
+                
+                // Hide loading overlay after WASM loads
+                setTimeout(() => {
+                    document.getElementById('loading-overlay').classList.remove('active');
+                }, 500);
+                
+            } catch (error) {
+                console.error('❌ Failed to initialize WASM:', error);
+                document.querySelector('.loading-text').textContent = 'Failed to load. Please refresh.';
+                showToast('error', 'Loading Error', 'Failed to initialize auction system. Please refresh the page.');
+            }
+            
+            // ============ MODAL CONTROLS ============
             const modal = document.getElementById('sell-modal');
             const sellBtn = document.getElementById('sell-btn');
             const closeBtn = document.getElementById('close-modal');
             
             sellBtn.addEventListener('click', () => {
                 modal.classList.add('active');
+                document.getElementById('item-name').focus();
             });
             
             closeBtn.addEventListener('click', () => {
@@ -307,18 +575,63 @@
                 }
             });
             
-            // Sell form submission
-            document.getElementById('sell-form').addEventListener('submit', async (e) => {
+            // Close modal on Escape key
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && modal.classList.contains('active')) {
+                    modal.classList.remove('active');
+                }
+            });
+            
+            // ============ FORM VALIDATION ============
+            const form = document.getElementById('sell-form');
+            const fields = form.querySelectorAll('input, textarea');
+            
+            // Real-time validation
+            fields.forEach(field => {
+                field.addEventListener('blur', () => validateField(field));
+                field.addEventListener('input', () => {
+                    if (field.closest('.form-group').classList.contains('error')) {
+                        validateField(field);
+                    }
+                });
+            });
+            
+            // Character counter for description
+            const descField = document.getElementById('item-description');
+            const charCount = document.getElementById('desc-count');
+            descField.addEventListener('input', () => {
+                charCount.textContent = descField.value.length;
+            });
+            
+            // ============ FORM SUBMISSION ============
+            form.addEventListener('submit', async (e) => {
                 e.preventDefault();
                 
+                // Validate all fields
+                let isValid = true;
+                fields.forEach(field => {
+                    if (field.hasAttribute('required')) {
+                        if (!validateField(field)) {
+                            isValid = false;
+                        }
+                    }
+                });
+                
+                if (!isValid) {
+                    showToast('error', 'Validation Error', 'Please fix the errors in the form');
+                    return;
+                }
+                
                 const formData = {
-                    name: document.getElementById('item-name').value,
-                    description: document.getElementById('item-description').value,
+                    name: document.getElementById('item-name').value.trim(),
+                    description: document.getElementById('item-description').value.trim(),
                     startPrice: parseFloat(document.getElementById('starting-price').value),
                     duration: parseInt(document.getElementById('duration').value),
-                    email: document.getElementById('seller-email').value,
+                    email: document.getElementById('seller-email').value.trim(),
                     timestamp: new Date().toISOString()
                 };
+                
+                setLoading('submit-auction-btn', true);
                 
                 try {
                     const response = await fetch('/api/create-auction', {
@@ -328,24 +641,51 @@
                     });
                     
                     if (response.ok) {
-                        alert('✅ Your item has been submitted for auction!\n\nOur team will review it within 24 hours and contact you via email.');
+                        showToast('success', 'Submission Received!', 
+                            'Your item has been submitted. We\'ll contact you within 24 hours.');
                         modal.classList.remove('active');
-                        document.getElementById('sell-form').reset();
+                        form.reset();
+                        charCount.textContent = '0';
+                        fields.forEach(field => {
+                            field.closest('.form-group').classList.remove('success', 'error');
+                        });
                     } else {
-                        alert('❌ Failed to submit. Please try again.');
+                        const error = await response.text();
+                        showToast('error', 'Submission Failed', error || 'Please try again later');
                     }
                 } catch (error) {
                     console.error('Submission error:', error);
-                    alert('❌ Network error. Please check your connection.');
+                    showToast('error', 'Network Error', 'Please check your connection and try again');
+                } finally {
+                    setLoading('submit-auction-btn', false);
                 }
             });
             
-            // Bid button handler
+            // ============ BID BUTTON HANDLER ============
             document.getElementById('bid-btn').addEventListener('click', () => {
-                const amount = parseFloat(document.getElementById('bid-amount').value);
-                if (amount > 0) {
+                const input = document.getElementById('bid-amount');
+                const amount = parseFloat(input.value);
+                
+                if (!amount || amount <= 0) {
+                    showToast('error', 'Invalid Bid', 'Please enter a valid bid amount');
+                    input.focus();
+                    return;
+                }
+                
+                try {
                     place_bid('auction-1', amount);
-                    document.getElementById('bid-amount').value = '';
+                    showToast('success', 'Bid Placed!', `Your bid of $${amount.toFixed(2)} has been placed`);
+                    input.value = '';
+                } catch (error) {
+                    console.error('Bid error:', error);
+                    showToast('error', 'Bid Failed', 'Unable to place bid. Please try again');
+                }
+            });
+            
+            // Allow Enter key to place bid
+            document.getElementById('bid-amount').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    document.getElementById('bid-btn').click();
                 }
             });
         })();
