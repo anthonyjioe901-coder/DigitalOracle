@@ -364,6 +364,7 @@ pub fn place_bid(auction_id: String, amount: f64) {
                 msg_type: "place_bid".to_string(),
                 auction: None,
                 bid: Some(bid),
+                error: None,
             };
             
             if let Ok(msg_str) = serde_json::to_string(&msg) {
