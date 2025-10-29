@@ -278,6 +278,11 @@ func readMessages(client *Client) {
 }
 
 // ============ BID PROCESSING ============
+const (
+	MAX_BID_AMOUNT = 10000000.0  // $10 million maximum bid
+	MIN_BID_INCREMENT = 1.0       // $1 minimum increment
+)
+
 func processBid(bid *Bid, bidderId string) {
 	bid.BidderID = bidderId
 	bid.Timestamp = time.Now()
@@ -285,23 +290,80 @@ func processBid(bid *Bid, bidderId string) {
 	auctionMutex.Lock()
 	defer auctionMutex.Unlock()
 
-	// Find active auction and update
-	for _, auction := range auctions {
-		if auction.Status == "active" && bid.Amount > auction.CurrentBid {
-			auction.CurrentBid = bid.Amount
-			auction.HighestBidder = bidderId
-			auction.BidCount++
+	// Validation: Maximum bid limit
+	if bid.Amount > MAX_BID_AMOUNT {
+		msg := Message{
+			Type:  "bid_rejected",
+			Error: fmt.Sprintf("Maximum bid amount is $%s", formatMoney(MAX_BID_AMOUNT)),
+		}
+		broadcast <- msg
+		log.Printf("❌ Bid rejected: Amount $%.2f exceeds maximum of $%.2f", bid.Amount, MAX_BID_AMOUNT)
+		return
+	}
 
+	// Find auction and validate
+	for _, auction := range auctions {
+		// Check if bid is for this auction (you'll need to add auction_id to Bid struct)
+		// For now, we'll process the first matching conditions
+		
+		// CRITICAL FIX #1: Reject bids on ENDED auctions
+		if auction.Status == "ended" {
 			msg := Message{
-				Type:    "bid_accepted",
-				Auction: auction,
-				Bid:     bid,
+				Type:  "bid_rejected",
+				Error: "This auction has ended. Bids are no longer accepted.",
 			}
 			broadcast <- msg
-			log.Printf("💰 Bid accepted: $%.2f by %s on %s", bid.Amount, bidderId, auction.Title)
-			break
+			log.Printf("❌ Bid rejected: Auction '%s' has ENDED", auction.Title)
+			continue
+		}
+
+		// CRITICAL FIX #2: Reject bids on SCHEDULED auctions
+		if auction.Status == "scheduled" {
+			msg := Message{
+				Type:  "bid_rejected",
+				Error: "This auction has not started yet. Please wait until it begins.",
+			}
+			broadcast <- msg
+			log.Printf("❌ Bid rejected: Auction '%s' is SCHEDULED", auction.Title)
+			continue
+		}
+
+		// Only process bids on ACTIVE auctions
+		if auction.Status == "active" {
+			// CRITICAL FIX #3: Minimum bid increment validation
+			minRequired := auction.CurrentBid + MIN_BID_INCREMENT
+			if bid.Amount < minRequired {
+				msg := Message{
+					Type:  "bid_rejected",
+					Error: fmt.Sprintf("Bid must be at least $%.2f (current bid + $%.2f increment)", minRequired, MIN_BID_INCREMENT),
+				}
+				broadcast <- msg
+				log.Printf("❌ Bid rejected: $%.2f is below minimum required $%.2f", bid.Amount, minRequired)
+				return
+			}
+
+			// CRITICAL FIX #4: Ensure price never decreases
+			if bid.Amount > auction.CurrentBid {
+				auction.CurrentBid = bid.Amount
+				auction.HighestBidder = bidderId
+				auction.BidCount++
+
+				msg := Message{
+					Type:    "bid_accepted",
+					Auction: auction,
+					Bid:     bid,
+				}
+				broadcast <- msg
+				log.Printf("💰 Bid accepted: $%.2f by %s on %s (New price: $%.2f)", 
+					bid.Amount, bidderId, auction.Title, auction.CurrentBid)
+				return
+			}
 		}
 	}
+}
+
+func formatMoney(amount float64) string {
+	return fmt.Sprintf("%,.2f", amount)
 }
 
 // ============ BROADCAST LOOP ============

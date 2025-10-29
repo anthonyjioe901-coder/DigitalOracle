@@ -38,6 +38,7 @@ pub struct Message {
     pub msg_type: String,
     pub auction: Option<Auction>,
     pub bid: Option<Bid>,
+    pub error: Option<String>,
 }
 
 // ============ AUCTION STATE ============
@@ -130,6 +131,15 @@ fn handle_websocket_message(msg: Message, state: Rc<RefCell<AuctionState>>) {
                 log(&format!("💰 Bid accepted! New highest: ${}", auction.current_bid));
                 if let Some(existing) = state.borrow_mut().auctions.iter_mut().find(|a| a.id == auction.id) {
                     *existing = auction;
+                }
+            }
+        }
+        "bid_rejected" => {
+            if let Some(error) = msg.error {
+                log(&format!("❌ Bid rejected: {}", error));
+                // Trigger browser alert for rejected bids
+                if let Some(window) = window() {
+                    let _ = window.alert_with_message(&format!("Bid Rejected\n\n{}", error));
                 }
             }
         }

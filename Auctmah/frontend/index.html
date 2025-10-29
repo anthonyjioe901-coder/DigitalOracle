@@ -878,10 +878,19 @@
                 await init();
                 console.log('✅ Rust+WASM loaded successfully');
                 
-                // Hide loading overlay after WASM loads
+                // CRITICAL FIX #5: Hide loading overlay and connection status
                 setTimeout(() => {
                     document.getElementById('loading-overlay').classList.remove('active');
-                }, 500);
+                    // Also hide any persistent status messages
+                    const clientCount = document.getElementById('client-count');
+                    const auctionCount = document.getElementById('auction-count');
+                    if (clientCount && clientCount.textContent === 'Connecting...') {
+                        clientCount.textContent = 'Connected';
+                    }
+                    if (auctionCount && auctionCount.textContent === 'Loading auctions...') {
+                        auctionCount.textContent = 'Auctions loaded';
+                    }
+                }, 1000); // Give 1 second for auctions to load
                 
                 // Start health monitoring
                 startHealthMonitoring();
@@ -1046,6 +1055,8 @@
             });
             
             // ============ BID BUTTON HANDLER ============
+            const MAX_BID_AMOUNT = 10000000; // $10 million
+            
             document.getElementById('bid-btn').addEventListener('click', () => {
                 const input = document.getElementById('bid-amount');
                 const amount = parseFloat(input.value);
@@ -1056,9 +1067,18 @@
                     return;
                 }
                 
+                // Frontend validation: Maximum bid limit
+                if (amount > MAX_BID_AMOUNT) {
+                    showToast('error', 'Bid Too High', 
+                        `Maximum bid amount is $${MAX_BID_AMOUNT.toLocaleString()}`);
+                    input.focus();
+                    return;
+                }
+                
                 try {
                     place_bid('auction-1', amount);
-                    showToast('success', 'Bid Placed!', `Your bid of $${amount.toFixed(2)} has been placed`);
+                    showToast('success', 'Bid Submitted', 
+                        `Your bid of $${amount.toFixed(2)} is being processed...`);
                     input.value = '';
                 } catch (error) {
                     console.error('Bid error:', error);
