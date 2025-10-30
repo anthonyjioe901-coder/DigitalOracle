@@ -667,59 +667,227 @@
     <script type="module">
         import init, { place_bid } from './auctmah_frontend.js';
         
+        // ============ CONNECTIVITY STATE MANAGEMENT ============
+        let connectivityState = {
+            serverHealthy: false,
+            wsConnected: false,
+            lastHealthCheck: null,
+            lastSuccessfulConnection: null,
+            consecutiveFailures: 0,
+            totalFailures: 0,
+            userActionsBlocked: 0
+        };
+        
+        // Comprehensive logging system
+        function logConnection(level, category, message, data = {}) {
+            const timestamp = new Date().toISOString();
+            const logEntry = {
+                timestamp,
+                level, // 'info', 'warn', 'error', 'critical'
+                category, // 'websocket', 'health', 'user_action', 'timeout'
+                message,
+                state: { ...connectivityState },
+                ...data
+            };
+            
+            console.log(`[${level.toUpperCase()}] [${category}] ${message}`, logEntry);
+            
+            // Store critical failures
+            if (level === 'error' || level === 'critical') {
+                const failures = JSON.parse(localStorage.getItem('auctmah_failures') || '[]');
+                failures.push(logEntry);
+                // Keep only last 50 failures
+                localStorage.setItem('auctmah_failures', JSON.stringify(failures.slice(-50)));
+            }
+            
+            return logEntry;
+        }
+        
+        // Disable/enable UI elements based on connectivity
+        function updateUIState(connected) {
+            const bidBtn = document.getElementById('bid-btn');
+            const bidInput = document.getElementById('bid-amount');
+            const sellBtn = document.getElementById('sell-btn');
+            const submitBtn = document.getElementById('submit-auction-btn');
+            
+            if (!connected) {
+                // Disable all submission buttons
+                if (bidBtn) {
+                    bidBtn.disabled = true;
+                    bidBtn.style.opacity = '0.5';
+                    bidBtn.style.cursor = 'not-allowed';
+                    bidBtn.setAttribute('title', 'Backend unavailable');
+                }
+                if (bidInput) {
+                    bidInput.disabled = true;
+                    bidInput.style.opacity = '0.5';
+                }
+                if (sellBtn) {
+                    sellBtn.disabled = true;
+                    sellBtn.style.opacity = '0.5';
+                    sellBtn.setAttribute('title', 'Backend unavailable');
+                }
+                if (submitBtn) {
+                    submitBtn.disabled = true;
+                    submitBtn.style.opacity = '0.5';
+                }
+                
+                logConnection('warn', 'ui', 'UI elements disabled due to connectivity loss');
+            } else {
+                // Re-enable submission buttons
+                if (bidBtn && !bidBtn.dataset.permanentlyDisabled) {
+                    bidBtn.disabled = false;
+                    bidBtn.style.opacity = '1';
+                    bidBtn.style.cursor = 'pointer';
+                    bidBtn.removeAttribute('title');
+                }
+                if (bidInput) {
+                    bidInput.disabled = false;
+                    bidInput.style.opacity = '1';
+                }
+                if (sellBtn) {
+                    sellBtn.disabled = false;
+                    sellBtn.style.opacity = '1';
+                    sellBtn.removeAttribute('title');
+                }
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.style.opacity = '1';
+                }
+                
+                logConnection('info', 'ui', 'UI elements enabled - backend connected');
+            }
+        }
+        
         // ============ WEBSOCKET RECONNECTION WITH EXPONENTIAL BACKOFF ============
         let ws = null;
         let reconnectAttempts = 0;
         const maxReconnectDelay = 30000; // 30 seconds max
         let reconnectTimeout = null;
+        let heartbeatInterval = null;
+        let wsConnectionTimeout = null;
         
         function initializeWebSocket() {
+            logConnection('info', 'websocket', 'Initializing WebSocket connection', {
+                attempt: reconnectAttempts + 1
+            });
+            
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const wsUrl = `${protocol}//${window.location.host}/ws`;
+            
+            // Set connection timeout
+            wsConnectionTimeout = setTimeout(() => {
+                logConnection('error', 'timeout', 'WebSocket connection timeout (10s)', {
+                    url: wsUrl,
+                    readyState: ws ? ws.readyState : 'null'
+                });
+                
+                if (ws && ws.readyState === WebSocket.CONNECTING) {
+                    ws.close();
+                    showToast('error', 'Connection Timeout', 
+                        'Server took too long to respond. Retrying...');
+                    scheduleReconnect();
+                }
+            }, 10000);
             
             try {
                 ws = new WebSocket(wsUrl);
                 
                 ws.onopen = () => {
-                    console.log('✅ WebSocket connected');
+                    clearTimeout(wsConnectionTimeout);
                     reconnectAttempts = 0;
+                    connectivityState.wsConnected = true;
+                    connectivityState.lastSuccessfulConnection = new Date();
+                    connectivityState.consecutiveFailures = 0;
+                    
+                    logConnection('info', 'websocket', '✅ WebSocket connected successfully', {
+                        url: wsUrl,
+                        reconnectAttempts: 0
+                    });
+                    
                     hideConnectionBanner();
                     updateHealthIndicator('healthy', 'Server: Online');
+                    updateUIState(true);
+                    
+                    // Start heartbeat
+                    if (heartbeatInterval) clearInterval(heartbeatInterval);
+                    heartbeatInterval = setInterval(() => {
+                        if (ws && ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({ type: 'ping' }));
+                            logConnection('info', 'websocket', 'Heartbeat ping sent');
+                        }
+                    }, 30000);
                 };
                 
                 ws.onmessage = (event) => {
-                    // Handle incoming messages
+                    logConnection('info', 'websocket', 'Message received', {
+                        dataLength: event.data.length,
+                        preview: event.data.substring(0, 100)
+                    });
                     console.log('Message received:', event.data);
                 };
                 
-                ws.onclose = () => {
-                    console.log('❌ WebSocket disconnected');
+                ws.onclose = (event) => {
+                    clearTimeout(wsConnectionTimeout);
+                    connectivityState.wsConnected = false;
+                    connectivityState.consecutiveFailures++;
+                    connectivityState.totalFailures++;
+                    
+                    logConnection('warn', 'websocket', '❌ WebSocket disconnected', {
+                        code: event.code,
+                        reason: event.reason,
+                        wasClean: event.wasClean,
+                        consecutiveFailures: connectivityState.consecutiveFailures
+                    });
+                    
+                    updateHealthIndicator('error', 'Server: Disconnected');
+                    updateUIState(false);
                     scheduleReconnect();
                 };
                 
                 ws.onerror = (error) => {
-                    console.error('WebSocket error:', error);
+                    connectivityState.consecutiveFailures++;
+                    connectivityState.totalFailures++;
+                    
+                    logConnection('error', 'websocket', '❌ WebSocket error', {
+                        error: error.toString(),
+                        readyState: ws.readyState,
+                        consecutiveFailures: connectivityState.consecutiveFailures
+                    });
+                    
                     updateHealthIndicator('error', 'Server: Connection Error');
+                    updateUIState(false);
                 };
                 
-                // Send heartbeat/ping every 30 seconds
-                setInterval(() => {
-                    if (ws && ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({ type: 'ping' }));
-                    }
-                }, 30000);
-                
             } catch (error) {
-                console.error('Failed to create WebSocket:', error);
+                clearTimeout(wsConnectionTimeout);
+                connectivityState.consecutiveFailures++;
+                connectivityState.totalFailures++;
+                
+                logConnection('error', 'websocket', 'Failed to create WebSocket', {
+                    error: error.message,
+                    stack: error.stack
+                });
+                
+                updateUIState(false);
                 scheduleReconnect();
             }
         }
         
         function scheduleReconnect() {
-            if (reconnectTimeout) return; // Already scheduled
+            if (reconnectTimeout) {
+                logConnection('info', 'websocket', 'Reconnect already scheduled, skipping');
+                return;
+            }
             
             const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), maxReconnectDelay);
             reconnectAttempts++;
+            
+            logConnection('warn', 'websocket', `Scheduling reconnect in ${delay}ms`, {
+                attempt: reconnectAttempts,
+                delay,
+                consecutiveFailures: connectivityState.consecutiveFailures
+            });
             
             showConnectionBanner(
                 `Connection lost. Reconnecting in ${Math.round(delay / 1000)}s (attempt ${reconnectAttempts})...`,
@@ -729,11 +897,13 @@
             reconnectTimeout = setTimeout(async () => {
                 reconnectTimeout = null;
                 
-                // Check server health before reconnecting
+                logConnection('info', 'health', 'Checking server health before reconnect');
                 const healthy = await checkServerHealth();
+                
                 if (healthy) {
                     initializeWebSocket();
                 } else {
+                    logConnection('error', 'health', 'Server still unhealthy, scheduling another reconnect');
                     scheduleReconnect();
                 }
             }, delay);
@@ -746,12 +916,22 @@
         const MAX_RETRIES = 3;
         const HEALTH_CHECK_TIMEOUT = 5000; // 5 seconds
         const HEALTH_CHECK_INTERVAL = 30000; // 30 seconds
+        const LOADING_TIMEOUT = 15000; // 15 seconds for initial load
         
         async function checkServerHealth() {
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), HEALTH_CHECK_TIMEOUT);
+            const timeoutId = setTimeout(() => {
+                controller.abort();
+                logConnection('error', 'timeout', 'Health check timeout', {
+                    timeout: HEALTH_CHECK_TIMEOUT
+                });
+            }, HEALTH_CHECK_TIMEOUT);
             
             try {
+                logConnection('info', 'health', 'Performing health check', {
+                    endpoint: '/api/health'
+                });
+                
                 const response = await fetch('/api/health', {
                     method: 'GET',
                     signal: controller.signal,
@@ -762,19 +942,55 @@
                 
                 if (response.ok) {
                     const data = await response.json();
+                    connectivityState.serverHealthy = true;
+                    connectivityState.lastHealthCheck = new Date();
+                    connectivityState.consecutiveFailures = 0;
+                    
+                    logConnection('info', 'health', '✅ Server healthy', {
+                        status: data.status,
+                        uptime: data.uptime_seconds,
+                        auctions: data.auctions,
+                        clients: data.active_clients
+                    });
+                    
                     updateHealthIndicator('healthy', `Server: ${data.status || 'Online'}`);
+                    updateUIState(true);
                     return true;
                 }
+                
+                connectivityState.serverHealthy = false;
+                connectivityState.consecutiveFailures++;
+                
+                logConnection('warn', 'health', 'Server returned non-OK status', {
+                    status: response.status,
+                    statusText: response.statusText
+                });
+                
+                updateHealthIndicator('error', 'Server: Unavailable');
+                updateUIState(false);
                 return false;
+                
             } catch (error) {
                 clearTimeout(timeoutId);
+                connectivityState.serverHealthy = false;
+                connectivityState.consecutiveFailures++;
+                connectivityState.totalFailures++;
+                
                 if (error.name === 'AbortError') {
-                    console.warn('Health check timed out');
+                    logConnection('error', 'timeout', 'Health check timed out', {
+                        timeout: HEALTH_CHECK_TIMEOUT
+                    });
                     updateHealthIndicator('timeout', 'Server: Timeout');
                 } else {
-                    console.error('Health check failed:', error);
+                    logConnection('error', 'health', 'Health check failed', {
+                        error: error.message,
+                        name: error.name,
+                        consecutiveFailures: connectivityState.consecutiveFailures
+                    });
                     updateHealthIndicator('error', 'Server: Offline');
                 }
+                
+                updateUIState(false);
                 return false;
             }
         }
@@ -847,7 +1063,47 @@
         }
         
         async function initializeWithRetry() {
+            logConnection('info', 'init', 'Starting application initialization', {
+                maxRetries: MAX_RETRIES
+            });
+            
             showConnectionBanner('Checking server connection...', 'warning');
+            
+            // Set overall loading timeout
+            const loadingTimeoutId = setTimeout(() => {
+                if (!connectivityState.serverHealthy) {
+                    logConnection('critical', 'timeout', 'Initial loading timeout exceeded', {
+                        timeout: LOADING_TIMEOUT,
+                        retries: connectionRetries
+                    });
+                    
+                    showConnectionBanner(
+                        'Loading is taking too long. Server may be starting up or experiencing issues.',
+                        'error',
+                        true
+                    );
+                    
+                    showToast('error', 'Loading Timeout', 
+                        'The server is taking too long to respond. Please try refreshing or check back later.');
+                    
+                    // Show error state with diagnostics
+                    showErrorState();
+                    document.getElementById('loading-overlay').classList.remove('active');
+                    
+                    // Add diagnostics info
+                    const errorDesc = document.querySelector('.error-description');
+                    if (errorDesc) {
+                        errorDesc.innerHTML = `
+                            We're having trouble connecting to the auction server.<br>
+                            Please check your internet connection or try again in a moment.<br><br>
+                            <strong>Diagnostics:</strong><br>
+                            • Consecutive failures: ${connectivityState.consecutiveFailures}<br>
+                            • Connection attempts: ${connectionRetries}<br>
+                            • Last check: ${new Date().toLocaleTimeString()}
+                        `;
+                    }
+                }
+            }, LOADING_TIMEOUT);
             
             // First, check if server is healthy
             const serverHealthy = await checkServerHealth();
@@ -855,35 +1111,63 @@
             if (!serverHealthy) {
                 connectionRetries++;
                 
+                logConnection('warn', 'init', 'Server health check failed', {
+                    attempt: connectionRetries,
+                    maxRetries: MAX_RETRIES
+                });
+                
                 if (connectionRetries < MAX_RETRIES) {
                     showConnectionBanner(
-                        `Connection attempt ${connectionRetries}/${MAX_RETRIES}...`, 
+                        `Connection attempt ${connectionRetries}/${MAX_RETRIES}... Retrying in 2s`, 
                         'warning'
                     );
-                    setTimeout(initializeWithRetry, 2000);
-                    return false;
+                    
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                    return initializeWithRetry();
                 } else {
+                    clearTimeout(loadingTimeoutId);
+                    
+                    logConnection('critical', 'init', 'Maximum retries exceeded', {
+                        totalRetries: connectionRetries,
+                        totalFailures: connectivityState.totalFailures
+                    });
+                    
                     showConnectionBanner(
                         'Unable to connect to server. Please check your connection.', 
                         'error', 
                         true
                     );
+                    
                     showErrorState();
                     document.getElementById('loading-overlay').classList.remove('active');
+                    updateUIState(false);
                     return false;
                 }
             }
+            
+            clearTimeout(loadingTimeoutId);
             
             // Server is healthy, check auction API
             const auctionAPIHealthy = await checkAuctionAPI();
             
             if (!auctionAPIHealthy) {
+                logConnection('warn', 'init', 'Auction API unavailable', {
+                    serverHealthy: true
+                });
+                
                 showConnectionBanner(
                     'Auction API unavailable. Some features may not work.', 
                     'warning'
                 );
             } else {
                 isServerHealthy = true;
+                connectivityState.serverHealthy = true;
+                
+                logConnection('info', 'init', '✅ All systems operational', {
+                    serverHealthy: true,
+                    auctionAPIHealthy: true
+                });
+                
                 showConnectionBanner('Connected successfully!', 'success');
                 setTimeout(hideConnectionBanner, 3000);
             }
@@ -1047,15 +1331,54 @@
             });
             
             document.getElementById('check-status-btn').addEventListener('click', async () => {
+                logConnection('info', 'user_action', 'User checking server status manually');
+                
                 showToast('info', 'Checking Status', 'Verifying server connection...');
                 const healthy = await checkServerHealth();
+                
                 if (healthy) {
+                    logConnection('info', 'user_action', 'Status check successful - reloading');
                     showToast('success', 'Server Online', 'Connection successful! Reloading...');
                     setTimeout(() => location.reload(), 1500);
                 } else {
-                    showToast('error', 'Still Offline', 'Server is still unavailable. Please try again later.');
+                    logConnection('error', 'user_action', 'Status check failed - still offline');
+                    
+                    // Show diagnostics
+                    const failures = JSON.parse(localStorage.getItem('auctmah_failures') || '[]');
+                    const lastFailure = failures[failures.length - 1];
+                    
+                    showToast('error', 'Still Offline', 
+                        `Server is still unavailable. Last error: ${lastFailure?.message || 'Unknown'}`);
                 }
             });
+            
+            // Add diagnostics viewer (accessible via console)
+            window.auctmahDiagnostics = {
+                getState: () => connectivityState,
+                getLogs: () => JSON.parse(localStorage.getItem('auctmah_failures') || '[]'),
+                clearLogs: () => {
+                    localStorage.removeItem('auctmah_failures');
+                    console.log('Diagnostics logs cleared');
+                },
+                exportLogs: () => {
+                    const logs = JSON.parse(localStorage.getItem('auctmah_failures') || '[]');
+                    const blob = new Blob([JSON.stringify(logs, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `auctmah-diagnostics-${Date.now()}.json`;
+                    a.click();
+                    console.log('Diagnostics exported');
+                },
+                forceReconnect: () => {
+                    logConnection('info', 'user_action', 'User forced reconnection');
+                    reconnectAttempts = 0;
+                    initializeWebSocket();
+                }
+            };
+            
+            console.log('🔍 Diagnostics available: window.auctmahDiagnostics');
+            console.log('Commands: getState(), getLogs(), clearLogs(), exportLogs(), forceReconnect()');
             
             // ============ MODAL CONTROLS ============
             const modal = document.getElementById('sell-modal');
@@ -1109,14 +1432,25 @@
             form.addEventListener('submit', async (e) => {
                 e.preventDefault();
                 
-                // Check server health before submission
-                if (!isServerHealthy) {
+                // Check backend connectivity FIRST
+                if (!connectivityState.serverHealthy) {
+                    connectivityState.userActionsBlocked++;
+                    
+                    logConnection('warn', 'user_action', 'Auction submission blocked - backend unreachable', {
+                        serverHealthy: connectivityState.serverHealthy,
+                        totalBlocked: connectivityState.userActionsBlocked
+                    });
+                    
+                    showToast('error', 'Backend Unavailable', 
+                        'Cannot submit auction right now. Please wait for server connection to restore.');
+                    
+                    // Try to reconnect
                     const healthy = await checkServerHealth();
                     if (!healthy) {
-                        showToast('error', 'Server Unavailable', 
-                            'Cannot submit right now. Please try again in a moment.');
+                        showConnectionBanner('Server is currently offline. Please try again later.', 'error', true);
                         return;
                     }
+                    connectivityState.serverHealthy = true;
                     isServerHealthy = true;
                 }
                 
@@ -1131,6 +1465,7 @@
                 });
                 
                 if (!isValid) {
+                    logConnection('warn', 'user_action', 'Form validation failed');
                     showToast('error', 'Validation Error', 'Please fix the errors in the form');
                     return;
                 }
@@ -1144,10 +1479,21 @@
                     timestamp: new Date().toISOString()
                 };
                 
+                logConnection('info', 'user_action', 'Submitting auction', {
+                    name: formData.name,
+                    startPrice: formData.startPrice,
+                    duration: formData.duration
+                });
+                
                 setLoading('submit-auction-btn', true);
                 
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+                const timeoutId = setTimeout(() => {
+                    controller.abort();
+                    logConnection('error', 'timeout', 'Auction submission timeout', {
+                        timeout: 10000
+                    });
+                }, 10000);
                 
                 try {
                     const response = await fetch('/api/create-auction', {
@@ -1160,6 +1506,10 @@
                     clearTimeout(timeoutId);
                     
                     if (response.ok) {
+                        logConnection('info', 'user_action', 'Auction submitted successfully', {
+                            name: formData.name
+                        });
+                        
                         showToast('success', 'Submission Received!', 
                             'Your item has been submitted. We\'ll contact you within 24 hours.');
                         modal.classList.remove('active');
@@ -1170,19 +1520,35 @@
                         });
                     } else {
                         const error = await response.text();
+                        
+                        logConnection('error', 'user_action', 'Auction submission rejected', {
+                            status: response.status,
+                            error
+                        });
+                        
                         showToast('error', 'Submission Failed', error || 'Please try again later');
                     }
                 } catch (error) {
                     clearTimeout(timeoutId);
-                    console.error('Submission error:', error);
                     
                     if (error.name === 'AbortError') {
+                        logConnection('error', 'timeout', 'Auction submission timeout', {
+                            timeout: 10000
+                        });
+                        
                         showToast('error', 'Request Timeout', 
                             'The server took too long to respond. Please try again.');
                     } else {
+                        logConnection('error', 'user_action', 'Auction submission network error', {
+                            error: error.message,
+                            name: error.name
+                        });
+                        
                         showToast('error', 'Network Error', 
                             'Please check your connection and try again');
+                        connectivityState.serverHealthy = false;
                         isServerHealthy = false;
+                        updateUIState(false);
                     }
                 } finally {
                     setLoading('submit-auction-btn', false);
@@ -1192,11 +1558,36 @@
             // ============ BID BUTTON HANDLER ============
             const MAX_BID_AMOUNT = 10000000; // $10 million
             
-            document.getElementById('bid-btn').addEventListener('click', () => {
+            document.getElementById('bid-btn').addEventListener('click', async () => {
                 const input = document.getElementById('bid-amount');
                 const amount = parseFloat(input.value);
                 
+                // Check backend connectivity FIRST
+                if (!connectivityState.serverHealthy || !connectivityState.wsConnected) {
+                    connectivityState.userActionsBlocked++;
+                    
+                    logConnection('warn', 'user_action', 'Bid blocked - backend unreachable', {
+                        amount,
+                        serverHealthy: connectivityState.serverHealthy,
+                        wsConnected: connectivityState.wsConnected,
+                        totalBlocked: connectivityState.userActionsBlocked
+                    });
+                    
+                    showToast('error', 'Backend Unavailable', 
+                        'Cannot place bid right now. The server is unreachable. Please wait for reconnection.');
+                    
+                    // Try to reconnect
+                    showConnectionBanner('Attempting to reconnect...', 'warning');
+                    const healthy = await checkServerHealth();
+                    if (healthy && !connectivityState.wsConnected) {
+                        initializeWebSocket();
+                    }
+                    
+                    return;
+                }
+                
                 if (!amount || amount <= 0) {
+                    logConnection('warn', 'user_action', 'Invalid bid amount', { amount });
                     showToast('error', 'Invalid Bid', 'Please enter a valid bid amount');
                     input.focus();
                     return;
@@ -1204,6 +1595,10 @@
                 
                 // Frontend validation: Maximum bid limit
                 if (amount > MAX_BID_AMOUNT) {
+                    logConnection('warn', 'user_action', 'Bid exceeds maximum', {
+                        amount,
+                        max: MAX_BID_AMOUNT
+                    });
                     showToast('error', 'Bid Too High', 
                         `Maximum bid amount is $${MAX_BID_AMOUNT.toLocaleString()}`);
                     input.focus();
@@ -1211,11 +1606,28 @@
                 }
                 
                 try {
+                    logConnection('info', 'user_action', 'Placing bid', {
+                        amount,
+                        auction: 'auction-1'
+                    });
+                    
                     place_bid('auction-1', amount);
+                    
                     showToast('success', 'Bid Submitted', 
                         `Your bid of $${amount.toFixed(2)} is being processed...`);
                     input.value = '';
+                    
+                    logConnection('info', 'user_action', 'Bid submitted successfully', {
+                        amount
+                    });
+                    
                 } catch (error) {
+                    logConnection('error', 'user_action', 'Bid submission failed', {
+                        amount,
+                        error: error.message,
+                        stack: error.stack
+                    });
+                    
                     console.error('Bid error:', error);
                     showToast('error', 'Bid Failed', 'Unable to place bid. Please try again');
                 }
