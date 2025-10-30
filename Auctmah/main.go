@@ -52,6 +52,9 @@ type AuctionSubmission struct {
 var (
 	upgrader = websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool { return true },
+		HandshakeTimeout: 10 * time.Second,
+		ReadBufferSize:   1024,
+		WriteBufferSize:  1024,
 	}
 
 	auctions      = make(map[string]*Auction)
@@ -63,6 +66,11 @@ var (
 	broadcast     = make(chan Message, 256)
 	
 	startTime     = time.Now()
+	
+	// WebSocket ping/pong settings
+	pongWait = 60 * time.Second
+	pingPeriod = (pongWait * 9) / 10  // Send pings at 90% of pong wait time
+	writeWait = 10 * time.Second
 )
 
 type Client struct {
@@ -206,6 +214,8 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 	auctionMutex.RUnlock()
 
+	// Start ping/pong handlers for keeping connection alive
+	go writePump(client)
 	go readMessages(client)
 }
 
@@ -255,9 +265,9 @@ func readMessages(client *Client) {
 		log.Printf("❌ Client disconnected: %s (total: %d)\n", client.id, len(clients))
 	}()
 
-	client.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	client.conn.SetReadDeadline(time.Now().Add(pongWait))
 	client.conn.SetPongHandler(func(string) error {
-		client.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		client.conn.SetReadDeadline(time.Now().Add(pongWait))
 		return nil
 	})
 
@@ -265,14 +275,40 @@ func readMessages(client *Client) {
 		var msg Message
 		err := client.conn.ReadJSON(&msg)
 		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway) {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				log.Printf("WebSocket error: %v", err)
 			}
 			break
 		}
 
-		if msg.Type == "place_bid" && msg.Bid != nil {
-			processBid(msg.Bid, client.id)
+		// Handle different message types
+		switch msg.Type {
+		case "place_bid":
+			if msg.Bid != nil {
+				processBid(msg.Bid, client.id)
+			}
+		case "pong":
+			// Client responded to ping
+			client.conn.SetReadDeadline(time.Now().Add(pongWait))
+		}
+	}
+}
+
+// ============ MESSAGE WRITER (PING/PONG HANDLER) ============
+func writePump(client *Client) {
+	ticker := time.NewTicker(pingPeriod)
+	defer func() {
+		ticker.Stop()
+		client.conn.Close()
+	}()
+
+	for {
+		select {
+		case <-ticker.C:
+			client.conn.SetWriteDeadline(time.Now().Add(writeWait))
+			if err := client.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return
+			}
 		}
 	}
 }
