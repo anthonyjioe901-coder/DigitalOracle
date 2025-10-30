@@ -582,7 +582,7 @@
                 Please check your internet connection or try again in a moment.
             </div>
             <div class="error-actions">
-                <button class="action-btn" onclick="location.reload()">Reload Page</button>
+                <button class="action-btn" id="reload-page-btn">Reload Page</button>
                 <button class="action-btn secondary" id="check-status-btn">Check Status</button>
             </div>
         </div>
@@ -675,8 +675,26 @@
             lastSuccessfulConnection: null,
             consecutiveFailures: 0,
             totalFailures: 0,
-            userActionsBlocked: 0
+            userActionsBlocked: 0,
+            connectionHistory: [] // Track last 20 connection attempts
         };
+        
+        // Track connection attempts
+        function trackConnectionAttempt(type, success, details = {}) {
+            const attempt = {
+                timestamp: new Date().toISOString(),
+                type, // 'websocket', 'health_check', 'user_action'
+                success,
+                ...details
+            };
+            
+            connectivityState.connectionHistory.unshift(attempt);
+            // Keep only last 20 attempts
+            connectivityState.connectionHistory = connectivityState.connectionHistory.slice(0, 20);
+            
+            logConnection(success ? 'info' : 'error', type, 
+                `Connection attempt ${success ? 'succeeded' : 'failed'}`, attempt);
+        }
         
         // Comprehensive logging system
         function logConnection(level, category, message, data = {}) {
@@ -800,6 +818,11 @@
                     connectivityState.lastSuccessfulConnection = new Date();
                     connectivityState.consecutiveFailures = 0;
                     
+                    trackConnectionAttempt('websocket', true, {
+                        url: wsUrl,
+                        attempt: reconnectAttempts + 1
+                    });
+                    
                     logConnection('info', 'websocket', '✅ WebSocket connected successfully', {
                         url: wsUrl,
                         reconnectAttempts: 0
@@ -832,6 +855,12 @@
                     connectivityState.wsConnected = false;
                     connectivityState.consecutiveFailures++;
                     connectivityState.totalFailures++;
+                    
+                    trackConnectionAttempt('websocket', false, {
+                        code: event.code,
+                        reason: event.reason,
+                        wasClean: event.wasClean
+                    });
                     
                     logConnection('warn', 'websocket', '❌ WebSocket disconnected', {
                         code: event.code,
@@ -934,13 +963,18 @@
                 
                 const response = await fetch('/api/health', {
                     method: 'GET',
-                    signal: controller.signal,
-                    cache: 'no-cache'
-                });
-                
-                clearTimeout(timeoutId);
-                
                 if (response.ok) {
+                    const data = await response.json();
+                    connectivityState.serverHealthy = true;
+                    connectivityState.lastHealthCheck = new Date();
+                    connectivityState.consecutiveFailures = 0;
+                    
+                    trackConnectionAttempt('health_check', true, {
+                        status: data.status,
+                        uptime: data.uptime_seconds
+                    });
+                    
+                    logConnection('info', 'health', '✅ Server healthy', {
                     const data = await response.json();
                     connectivityState.serverHealthy = true;
                     connectivityState.lastHealthCheck = new Date();
@@ -953,10 +987,15 @@
                         clients: data.active_clients
                     });
                     
-                    updateHealthIndicator('healthy', `Server: ${data.status || 'Online'}`);
-                    updateUIState(true);
-                    return true;
-                }
+                connectivityState.serverHealthy = false;
+                connectivityState.consecutiveFailures++;
+                
+                trackConnectionAttempt('health_check', false, {
+                    status: response.status,
+                    statusText: response.statusText
+                });
+                
+                logConnection('warn', 'health', 'Server returned non-OK status', {
                 
                 connectivityState.serverHealthy = false;
                 connectivityState.consecutiveFailures++;
@@ -965,13 +1004,18 @@
                     status: response.status,
                     statusText: response.statusText
                 });
-                
-                updateHealthIndicator('error', 'Server: Unavailable');
-                updateUIState(false);
-                return false;
-                
             } catch (error) {
                 clearTimeout(timeoutId);
+                connectivityState.serverHealthy = false;
+                connectivityState.consecutiveFailures++;
+                connectivityState.totalFailures++;
+                
+                trackConnectionAttempt('health_check', false, {
+                    error: error.message,
+                    name: error.name
+                });
+                
+                if (error.name === 'AbortError') {
                 connectivityState.serverHealthy = false;
                 connectivityState.consecutiveFailures++;
                 connectivityState.totalFailures++;
@@ -1020,18 +1064,35 @@
             const dot = document.getElementById('health-dot');
             const healthText = document.getElementById('health-text');
             
+            if (!indicator || !dot || !healthText) return;
+            
             indicator.style.display = 'flex';
             dot.className = 'health-dot';
             
-            if (status === 'healthy') {
+            // Synchronize with actual connectivity state
+            const actualStatus = connectivityState.serverHealthy && connectivityState.wsConnected 
+                ? 'healthy' 
+                : connectivityState.serverHealthy 
+                    ? 'timeout' 
+                    : 'error';
+            
+            logConnection('info', 'ui', 'Health indicator updated', {
+                requestedStatus: status,
+                actualStatus,
+                text,
+                serverHealthy: connectivityState.serverHealthy,
+                wsConnected: connectivityState.wsConnected
+            });
+            
+            if (actualStatus === 'healthy') {
                 dot.classList.add('success');
-                healthText.textContent = text;
-            } else if (status === 'timeout') {
+                healthText.textContent = text || 'Server: Online';
+            } else if (actualStatus === 'timeout') {
                 dot.classList.add('warning');
-                healthText.textContent = text;
+                healthText.textContent = text || 'Server: WebSocket Disconnected';
             } else {
                 dot.classList.add('error');
-                healthText.textContent = text;
+                healthText.textContent = text || 'Server: Offline';
             }
         }
         
@@ -1177,18 +1238,56 @@
         
         // Start periodic health checks
         function startHealthMonitoring() {
+            logConnection('info', 'health', 'Starting periodic health monitoring', {
+                interval: HEALTH_CHECK_INTERVAL
+            });
+            
             healthCheckInterval = setInterval(async () => {
+                logConnection('info', 'health', 'Periodic health check triggered');
+                
                 const healthy = await checkServerHealth();
+                const previousState = isServerHealthy;
+                
                 if (!healthy && isServerHealthy) {
+                    // Server went offline
                     isServerHealthy = false;
+                    connectivityState.serverHealthy = false;
+                    
+                    logConnection('warn', 'health', 'Server became unhealthy during monitoring', {
+                        previousState,
+                        newState: false
+                    });
+                    
                     showConnectionBanner(
                         'Connection lost. Attempting to reconnect...', 
                         'warning'
                     );
+                    
+                    updateUIState(false);
+                    updateHealthIndicator('error', 'Server: Connection Lost');
+                    
                 } else if (healthy && !isServerHealthy) {
+                    // Server came back online
                     isServerHealthy = true;
+                    connectivityState.serverHealthy = true;
+                    connectivityState.consecutiveFailures = 0;
+                    
+                    logConnection('info', 'health', 'Server recovered during monitoring', {
+                        previousState,
+                        newState: true
+                    });
+                    
                     showConnectionBanner('Connection restored!', 'success');
                     setTimeout(hideConnectionBanner, 3000);
+                    
+                    updateUIState(true);
+                    updateHealthIndicator('healthy', 'Server: Online');
+                    
+                    // Reconnect WebSocket if needed
+                    if (!connectivityState.wsConnected) {
+                        logConnection('info', 'health', 'Reconnecting WebSocket after server recovery');
+                        initializeWebSocket();
+                    }
                 }
             }, HEALTH_CHECK_INTERVAL);
         }
@@ -1322,43 +1421,184 @@
                 showToast('error', 'Loading Error', 'Failed to initialize auction system. Please refresh the page.');
                 showConnectionBanner('Application failed to load', 'error', true);
             }            // ============ RETRY CONNECTION HANDLER ============
-            document.getElementById('retry-connection').addEventListener('click', () => {
+            document.getElementById('retry-connection').addEventListener('click', async () => {
+                logConnection('info', 'user_action', 'User clicked Retry Connection button', {
+                    currentState: connectivityState,
+                    retries: connectionRetries
+                });
+                
+                // Reset retry counter
                 connectionRetries = 0;
+                
+                // Show loading state with feedback
                 hideErrorState();
                 document.getElementById('loading-overlay').classList.add('active');
-                document.querySelector('.loading-text').textContent = 'Reconnecting...';
-                location.reload();
-            });
-            
-            document.getElementById('check-status-btn').addEventListener('click', async () => {
-                logConnection('info', 'user_action', 'User checking server status manually');
+                document.querySelector('.loading-text').textContent = 'Attempting to reconnect...';
                 
-                showToast('info', 'Checking Status', 'Verifying server connection...');
+                showToast('info', 'Retrying Connection', 'Checking server availability...');
+                
+                // Perform health check first
                 const healthy = await checkServerHealth();
                 
                 if (healthy) {
-                    logConnection('info', 'user_action', 'Status check successful - reloading');
-                    showToast('success', 'Server Online', 'Connection successful! Reloading...');
-                    setTimeout(() => location.reload(), 1500);
-                } else {
-                    logConnection('error', 'user_action', 'Status check failed - still offline');
+                    logConnection('info', 'user_action', 'Retry successful - server is healthy');
                     
-                    // Show diagnostics
-                    const failures = JSON.parse(localStorage.getItem('auctmah_failures') || '[]');
-                    const lastFailure = failures[failures.length - 1];
+                    showToast('success', 'Connection Restored!', 
+                        'Server is now available. Reloading page...');
+                    
+                    setTimeout(() => {
+                        logConnection('info', 'user_action', 'Reloading page after successful retry');
+                        location.reload();
+                    }, 1000);
+                } else {
+                    logConnection('error', 'user_action', 'Retry failed - server still unavailable', {
+                        consecutiveFailures: connectivityState.consecutiveFailures,
+                        totalFailures: connectivityState.totalFailures
+                    });
+                    
+                    // Show detailed error with next steps
+                    document.getElementById('loading-overlay').classList.remove('active');
+                    showErrorState();
+                    
+                    const errorDesc = document.querySelector('.error-description');
+                    if (errorDesc) {
+                        errorDesc.innerHTML = `
+                            <strong>Connection Failed</strong><br><br>
+                            The server is still unavailable after retry.<br><br>
+                            <strong>What to try next:</strong><br>
+                            1. Check your internet connection<br>
+                            2. Wait 1-2 minutes and try again (server may be restarting)<br>
+                            3. Clear your browser cache and refresh<br>
+                            4. Try a different browser or device<br><br>
+                            <strong>Diagnostics:</strong><br>
+                            • Consecutive failures: ${connectivityState.consecutiveFailures}<br>
+                            • Total attempts: ${connectivityState.totalFailures}<br>
+                            • Last attempt: ${new Date().toLocaleTimeString()}<br>
+                            • Status: Server unreachable (timeout or offline)
+                        `;
+                    }
                     
                     showToast('error', 'Still Offline', 
-                        `Server is still unavailable. Last error: ${lastFailure?.message || 'Unknown'}`);
+                        'Server is not responding. Please check the error screen for next steps.');
                 }
+            });
+            
+            document.getElementById('check-status-btn').addEventListener('click', async () => {
+                logConnection('info', 'user_action', 'User clicked Check Status button', {
+                    currentState: connectivityState
+                });
+                
+                showToast('info', 'Checking Status', 'Verifying server connection...');
+                
+                // Perform comprehensive health check
+                const startTime = Date.now();
+                const healthy = await checkServerHealth();
+                const duration = Date.now() - startTime;
+                
+                logConnection('info', 'user_action', 'Health check completed', {
+                    healthy,
+                    duration,
+                    serverHealthy: connectivityState.serverHealthy
+                });
+                
+                if (healthy) {
+                    logConnection('info', 'user_action', 'Status check successful - reloading');
+                    
+                    showToast('success', 'Server Online', 
+                        `Connection successful! (${duration}ms response time) Reloading...`);
+                    
+                    setTimeout(() => {
+                        logConnection('info', 'user_action', 'Reloading page after status check');
+                        location.reload();
+                    }, 1500);
+                } else {
+                    logConnection('error', 'user_action', 'Status check failed - still offline', {
+                        duration,
+                        consecutiveFailures: connectivityState.consecutiveFailures
+                    });
+                    
+                    // Show diagnostics with actionable feedback
+                    const failures = JSON.parse(localStorage.getItem('auctmah_failures') || '[]');
+                    const lastFailure = failures[failures.length - 1];
+                    const recentFailures = failures.filter(f => 
+                        new Date(f.timestamp) > new Date(Date.now() - 5 * 60 * 1000)
+                    ).length;
+                    
+                    // Determine likely issue
+                    let likelyIssue = 'Unknown';
+                    let nextSteps = [];
+                    
+                    if (duration > 4500) {
+                        likelyIssue = 'Server timeout (took >4.5s)';
+                        nextSteps = [
+                            'Server may be overloaded or starting up',
+                            'Wait 2-3 minutes and try again',
+                            'Consider refreshing the page'
+                        ];
+                    } else if (recentFailures > 5) {
+                        likelyIssue = 'Persistent connection issues';
+                        nextSteps = [
+                            'Check your internet connection',
+                            'Try disabling VPN or firewall temporarily',
+                            'Contact support if issue persists'
+                        ];
+                    } else {
+                        likelyIssue = 'Server appears offline';
+                        nextSteps = [
+                            'Service may be under maintenance',
+                            'Check https://auctmah.onrender.com/api/health',
+                            'Try again in a few minutes'
+                        ];
+                    }
+                    
+                    const errorDesc = document.querySelector('.error-description');
+                    if (errorDesc) {
+                        errorDesc.innerHTML = `
+                            <strong>Server Status: OFFLINE</strong><br><br>
+                            <strong>Likely Issue:</strong> ${likelyIssue}<br><br>
+                            <strong>Recommended Actions:</strong><br>
+                            ${nextSteps.map((step, i) => `${i + 1}. ${step}`).join('<br>')}<br><br>
+                            <strong>Technical Details:</strong><br>
+                            • Response time: ${duration}ms<br>
+                            • Recent failures (5min): ${recentFailures}<br>
+                            • Last error: ${lastFailure?.message || 'N/A'}<br>
+                            • Timestamp: ${new Date().toLocaleString()}
+                        `;
+                    }
+                    
+                    showToast('error', 'Server Offline', 
+                        `${likelyIssue}. Check error screen for details.`);
+                }
+            });
+            
+            // ============ RELOAD PAGE BUTTON HANDLER ============
+            document.getElementById('reload-page-btn').addEventListener('click', () => {
+                logConnection('info', 'user_action', 'User clicked Reload Page button', {
+                    currentState: connectivityState,
+                    totalFailures: connectivityState.totalFailures,
+                    consecutiveFailures: connectivityState.consecutiveFailures
+                });
+                
+                showToast('info', 'Reloading', 'Refreshing page...');
+                
+                setTimeout(() => {
+                    logConnection('info', 'user_action', 'Page reload initiated');
+                    location.reload();
+                }, 500);
             });
             
             // Add diagnostics viewer (accessible via console)
             window.auctmahDiagnostics = {
                 getState: () => connectivityState,
                 getLogs: () => JSON.parse(localStorage.getItem('auctmah_failures') || '[]'),
+                getConnectionHistory: () => connectivityState.connectionHistory,
                 clearLogs: () => {
                     localStorage.removeItem('auctmah_failures');
-                    console.log('Diagnostics logs cleared');
+                    console.log('✅ Diagnostics logs cleared');
+                },
+                clearHistory: () => {
+                    connectivityState.connectionHistory = [];
+                    console.log('✅ Connection history cleared');
                 },
                 exportLogs: () => {
                     const logs = JSON.parse(localStorage.getItem('auctmah_failures') || '[]');
@@ -1368,17 +1608,42 @@
                     a.href = url;
                     a.download = `auctmah-diagnostics-${Date.now()}.json`;
                     a.click();
-                    console.log('Diagnostics exported');
+                    console.log('✅ Diagnostics exported');
+                },
+                exportAll: () => {
+                    const data = {
+                        state: connectivityState,
+                        failures: JSON.parse(localStorage.getItem('auctmah_failures') || '[]'),
+                        connectionHistory: connectivityState.connectionHistory,
+                        timestamp: new Date().toISOString()
+                    };
+                    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `auctmah-full-diagnostics-${Date.now()}.json`;
+                    a.click();
+                    console.log('✅ Full diagnostics exported');
                 },
                 forceReconnect: () => {
-                    logConnection('info', 'user_action', 'User forced reconnection');
+                    logConnection('info', 'user_action', 'User forced reconnection via diagnostics');
                     reconnectAttempts = 0;
                     initializeWebSocket();
+                },
+                printReport: () => {
+                    console.group('🔍 Auctmah Diagnostics Report');
+                    console.log('📊 Current State:', connectivityState);
+                    console.log('🔴 Recent Failures:', JSON.parse(localStorage.getItem('auctmah_failures') || '[]').slice(-5));
+                    console.log('🔗 Connection History:', connectivityState.connectionHistory.slice(0, 10));
+                    console.log('⏱️ Last Health Check:', connectivityState.lastHealthCheck);
+                    console.log('✅ Last Success:', connectivityState.lastSuccessfulConnection);
+                    console.groupEnd();
                 }
             };
             
             console.log('🔍 Diagnostics available: window.auctmahDiagnostics');
-            console.log('Commands: getState(), getLogs(), clearLogs(), exportLogs(), forceReconnect()');
+            console.log('Commands: getState(), getLogs(), getConnectionHistory(), clearLogs(), clearHistory()');
+            console.log('          exportLogs(), exportAll(), forceReconnect(), printReport()');
             
             // ============ MODAL CONTROLS ============
             const modal = document.getElementById('sell-modal');
