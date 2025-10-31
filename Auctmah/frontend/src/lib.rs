@@ -218,10 +218,10 @@ fn render_frame(state: Rc<RefCell<AuctionState>>) {
         // Draw grid
         draw_grid(ctx);
         
-        // Draw auctions
+        // Draw auctions (updated spacing for taller cards)
         for (idx, auction) in state_ref.auctions.iter().enumerate() {
             let x = 50.0 + (idx % 3) as f64 * 450.0;
-            let y = 50.0 + (idx / 3) as f64 * 350.0;
+            let y = 100.0 + (idx / 3) as f64 * 360.0;  // Increased vertical spacing
             
             draw_auction_card(ctx, auction, x, y);
         }
@@ -267,7 +267,9 @@ fn draw_grid(ctx: &CanvasRenderingContext2d) {
 
 fn draw_auction_card(ctx: &CanvasRenderingContext2d, auction: &Auction, x: f64, y: f64) {
     let w = 400.0;
-    let h = 280.0;
+    let h = 300.0;  // Increased height for better spacing
+    let padding = 15.0;
+    let inner_w = w - (padding * 2.0);  // Content width respects padding
     
     // Background
     ctx.set_fill_style(&wasm_bindgen::JsValue::from_str("rgba(17, 22, 51, 0.8)"));
@@ -283,10 +285,15 @@ fn draw_auction_card(ctx: &CanvasRenderingContext2d, auction: &Auction, x: f64, 
     ctx.set_line_width(2.0);
     ctx.stroke_rect(x, y, w, h);
     
-    // Title
+    // Title (truncated to fit)
     ctx.set_fill_style(&wasm_bindgen::JsValue::from_str("#00d4ff"));
     ctx.set_font("16px Arial Bold");
-    ctx.fill_text(&auction.title, x + 15.0, y + 30.0).ok();
+    let title = if auction.title.len() > 25 {
+        format!("{}...", &auction.title[..22])
+    } else {
+        auction.title.clone()
+    };
+    ctx.fill_text(&title, x + padding, y + 30.0).ok();
     
     // Status badge
     let status_bg = match auction.status.as_str() {
@@ -304,38 +311,38 @@ fn draw_auction_card(ctx: &CanvasRenderingContext2d, auction: &Auction, x: f64, 
     // Current bid (LARGE)
     ctx.set_fill_style(&wasm_bindgen::JsValue::from_str("#ff6b6b"));
     ctx.set_font("28px Arial Bold");
-    ctx.fill_text(&format!("${:.0}", auction.current_bid), x + 15.0, y + 80.0).ok();
+    ctx.fill_text(&format!("${:.0}", auction.current_bid), x + padding, y + 80.0).ok();
     
     // Bid count
     ctx.set_fill_style(&wasm_bindgen::JsValue::from_str("#a0aec0"));
     ctx.set_font("12px Arial");
-    ctx.fill_text(&format!("Bids: {}", auction.bid_count), x + 15.0, y + 110.0).ok();
+    ctx.fill_text(&format!("Bids: {}", auction.bid_count), x + padding, y + 110.0).ok();
     
     // Highest bidder
     ctx.set_fill_style(&wasm_bindgen::JsValue::from_str("#a0aec0"));
     ctx.set_font("12px Arial");
-    ctx.fill_text(&format!("Leader: {}", &auction.highest_bidder[..std::cmp::min(15, auction.highest_bidder.len())]), x + 15.0, y + 130.0).ok();
+    ctx.fill_text(&format!("Leader: {}", &auction.highest_bidder[..std::cmp::min(15, auction.highest_bidder.len())]), x + padding, y + 130.0).ok();
     
-    // Progress bar (time remaining)
-    draw_progress_bar(ctx, x + 15.0, y + 170.0, 370.0, 15.0);
+    // Progress bar (properly contained within padding)
+    draw_progress_bar(ctx, x + padding, y + 150.0, inner_w, 15.0);
     
-    // Description
+    // Description (with ellipsis if truncated)
     ctx.set_fill_style(&wasm_bindgen::JsValue::from_str("#a0aec0"));
     ctx.set_font("11px Arial");
-    let desc = if auction.description.len() > 40 {
-        &auction.description[..40]
+    let desc = if auction.description.len() > 45 {
+        format!("{}...", &auction.description[..42])
     } else {
-        &auction.description
+        auction.description.clone()
     };
-    ctx.fill_text(desc, x + 15.0, y + 220.0).ok();
+    ctx.fill_text(&desc, x + padding, y + 195.0).ok();
     
-    // Bottom action
+    // Bottom action button (properly contained)
     ctx.set_fill_style(&wasm_bindgen::JsValue::from_str("rgba(0, 212, 255, 0.2)"));
-    ctx.fill_rect(x + 15.0, y + 240.0, 370.0, 30.0);
+    ctx.fill_rect(x + padding, y + 250.0, inner_w, 35.0);
     
     ctx.set_fill_style(&wasm_bindgen::JsValue::from_str("#00d4ff"));
     ctx.set_font("14px Arial Bold");
-    ctx.fill_text("Click to bid →", x + 160.0, y + 260.0).ok();
+    ctx.fill_text("Click to bid →", x + padding + 125.0, y + 273.0).ok();
 }fn draw_progress_bar(ctx: &CanvasRenderingContext2d, x: f64, y: f64, w: f64, h: f64) {
     // Background
     ctx.set_fill_style(&JsValue::from_str("rgba(255, 107, 107, 0.2)"));
