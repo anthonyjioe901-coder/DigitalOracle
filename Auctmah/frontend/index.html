@@ -963,6 +963,12 @@
                 
                 const response = await fetch('/api/health', {
                     method: 'GET',
+                    signal: controller.signal,
+                    cache: 'no-cache'
+                });
+                
+                clearTimeout(timeoutId);
+                
                 if (response.ok) {
                     const data = await response.json();
                     connectivityState.serverHealthy = true;
@@ -975,35 +981,33 @@
                     });
                     
                     logConnection('info', 'health', '✅ Server healthy', {
-                    const data = await response.json();
-                    connectivityState.serverHealthy = true;
-                    connectivityState.lastHealthCheck = new Date();
-                    connectivityState.consecutiveFailures = 0;
-                    
-                    logConnection('info', 'health', '✅ Server healthy', {
                         status: data.status,
                         uptime: data.uptime_seconds,
                         auctions: data.auctions,
                         clients: data.active_clients
                     });
                     
-                connectivityState.serverHealthy = false;
-                connectivityState.consecutiveFailures++;
-                
-                trackConnectionAttempt('health_check', false, {
-                    status: response.status,
-                    statusText: response.statusText
-                });
-                
-                logConnection('warn', 'health', 'Server returned non-OK status', {
-                
-                connectivityState.serverHealthy = false;
-                connectivityState.consecutiveFailures++;
-                
-                logConnection('warn', 'health', 'Server returned non-OK status', {
-                    status: response.status,
-                    statusText: response.statusText
-                });
+                    updateHealthIndicator('healthy', 'Server: Online');
+                    updateUIState(true);
+                    return true;
+                } else {
+                    connectivityState.serverHealthy = false;
+                    connectivityState.consecutiveFailures++;
+                    
+                    trackConnectionAttempt('health_check', false, {
+                        status: response.status,
+                        statusText: response.statusText
+                    });
+                    
+                    logConnection('warn', 'health', 'Server returned non-OK status', {
+                        status: response.status,
+                        statusText: response.statusText
+                    });
+                    
+                    updateHealthIndicator('error', 'Server: Offline');
+                    updateUIState(false);
+                    return false;
+                }
             } catch (error) {
                 clearTimeout(timeoutId);
                 connectivityState.serverHealthy = false;
@@ -1014,11 +1018,6 @@
                     error: error.message,
                     name: error.name
                 });
-                
-                if (error.name === 'AbortError') {
-                connectivityState.serverHealthy = false;
-                connectivityState.consecutiveFailures++;
-                connectivityState.totalFailures++;
                 
                 if (error.name === 'AbortError') {
                     logConnection('error', 'timeout', 'Health check timed out', {
