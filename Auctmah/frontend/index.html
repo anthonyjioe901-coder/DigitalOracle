@@ -972,8 +972,8 @@
                     try {
                         const message = JSON.parse(event.data);
                         
-                        // ✅ CRITICAL FIX: Log auction_update messages
-                        if (message.type === 'auction_update') {
+                        // ✅ CRITICAL FIX: Handle auction_update messages and update display
+                        if (message.type === 'auction_update' && message.auction) {
                             console.log('🔨 Auction update received:', message.auction);
                             
                             logConnection('info', 'websocket', 'Auction update received', {
@@ -982,8 +982,8 @@
                                 currentBid: message.auction?.current_bid
                             });
                             
-                            // Note: WASM Rust code should handle this via its own onmessage handler
-                            // This is just JavaScript-level logging for diagnostics
+                            // ✅ NEW: Update or add auction to display
+                            updateAuctionDisplay(message.auction);
                         }
                         
                         // Handle client count updates
@@ -1852,15 +1852,34 @@
         
         // ============ FETCH AND DISPLAY AUCTIONS ============
         async function fetchAndDisplayAuctions() {
+            console.log('═══════════════════════════════════════════════');
+            console.log('📥 FETCHING AUCTIONS FROM REST API');
+            console.log('═══════════════════════════════════════════════');
+            
             try {
-                console.log('📥 Fetching auctions from /api/auctions...');
+                const apiUrl = '/api/auctions';
+                console.log(`  🌐 Endpoint: ${window.location.origin}${apiUrl}`);
+                console.log('  ⏱️  Sending GET request...');
                 
-                const response = await fetch('/api/auctions', {
+                const startTime = performance.now();
+                
+                const response = await fetch(apiUrl, {
                     method: 'GET',
                     cache: 'no-cache',
                     headers: {
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
                     }
+                });
+                
+                const endTime = performance.now();
+                const responseTime = Math.round(endTime - startTime);
+                
+                console.log(`  ⏱️  Response time: ${responseTime}ms`);
+                console.log(`  📡 Status: ${response.status} ${response.statusText}`);
+                console.log(`  📋 Headers:`, {
+                    'Content-Type': response.headers.get('Content-Type'),
+                    'CORS': response.headers.get('Access-Control-Allow-Origin')
                 });
                 
                 if (!response.ok) {
@@ -1868,55 +1887,82 @@
                 }
                 
                 const auctions = await response.json();
-                console.log(`✅ Fetched ${auctions.length} auctions from API:`, auctions);
+                console.log(`  ✅ Parsed ${auctions.length} auction objects`);
+                console.log('  📦 Auction data:', auctions);
+                
+                // Validate auction structure
+                if (!Array.isArray(auctions)) {
+                    throw new Error('API response is not an array');
+                }
+                
+                auctions.forEach((auction, i) => {
+                    console.log(`    ${i + 1}. ${auction.id || 'NO_ID'}: ${auction.title || 'NO_TITLE'} - $${auction.current_bid || 0}`);
+                });
                 
                 // Update UI with auction count
                 const auctionCount = document.getElementById('auction-count');
                 if (auctionCount) {
                     auctionCount.textContent = `${auctions.length} auctions loaded`;
+                    console.log(`  ✅ Updated auction count UI: "${auctions.length} auctions loaded"`);
+                } else {
+                    console.warn('  ⚠️  auction-count element not found');
                 }
                 
-                // Display auctions (since WASM canvas might not work, use HTML fallback)
+                // Display auctions as HTML
+                console.log('  🎨 Calling displayAuctionsHTML()...');
                 displayAuctionsHTML(auctions);
                 
-                // Also try to send to WASM if it's listening
-                if (window.ws && window.ws.readyState === WebSocket.OPEN) {
-                    auctions.forEach(auction => {
-                        const msg = {
-                            type: 'auction_update',
-                            auction: auction
-                        };
-                        // WASM should pick this up via its onmessage handler
-                        console.log('📤 Simulating auction_update for WASM:', auction.id);
-                    });
-                }
+                console.log('═══════════════════════════════════════════════');
+                console.log(`✅ AUCTION FETCH COMPLETE - ${auctions.length} loaded`);
+                console.log('═══════════════════════════════════════════════');
                 
                 return auctions;
                 
             } catch (error) {
-                console.error('❌ Failed to fetch auctions:', error);
+                console.log('═══════════════════════════════════════════════');
+                console.error('❌ AUCTION FETCH FAILED');
+                console.error('═══════════════════════════════════════════════');
+                console.error('  Error type:', error.name);
+                console.error('  Error message:', error.message);
+                console.error('  Stack trace:', error.stack);
+                
+                // Check common issues
+                if (error.message.includes('Failed to fetch')) {
+                    console.error('  � Possible causes:');
+                    console.error('     - Backend server not running');
+                    console.error('     - CORS blocking request');
+                    console.error('     - Network connectivity issue');
+                    console.error('     - Render cold start (server spinning up)');
+                }
+                
                 const auctionCount = document.getElementById('auction-count');
                 if (auctionCount) {
                     auctionCount.textContent = 'Error loading auctions';
+                    auctionCount.style.color = '#ff6b6b';
                 }
+                
                 showToast('error', 'Loading Error', 
-                    'Failed to load auctions. Check console for details.');
+                    `Failed to load auctions: ${error.message}`);
+                
+                console.log('═══════════════════════════════════════════════');
                 return [];
             }
         }
         
         // ============ DISPLAY AUCTIONS AS HTML (FALLBACK) ============
         function displayAuctionsHTML(auctions) {
+            console.log(`🎨 Rendering ${auctions.length} auctions as HTML cards...`);
+            
             // Check if canvas is working - if not, use HTML fallback
             const canvas = document.getElementById('auction-canvas');
             if (!canvas) {
-                console.warn('⚠️ Canvas not found - auctions may not render');
-                return;
+                console.warn('⚠️ Canvas not found - using HTML fallback');
             }
             
             // Create overlay container for auctions if WASM rendering fails
             let auctionContainer = document.getElementById('auction-html-container');
             if (!auctionContainer) {
+                console.log('  📦 Creating auction container...');
                 auctionContainer = document.createElement('div');
                 auctionContainer.id = 'auction-html-container';
                 auctionContainer.style.cssText = `
@@ -1935,70 +1981,16 @@
             
             // Clear existing content
             auctionContainer.innerHTML = '';
+            console.log('  🧹 Cleared existing cards');
             
-            // Render each auction as HTML card
-            auctions.forEach(auction => {
-                const card = document.createElement('div');
-                card.style.cssText = `
-                    background: rgba(17, 22, 51, 0.95);
-                    border: 2px solid ${auction.status === 'active' ? '#00d4ff' : '#ff6b6b'};
-                    border-radius: 12px;
-                    padding: 20px;
-                    color: white;
-                    font-family: Arial, sans-serif;
-                    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-                    transition: transform 0.2s, box-shadow 0.2s;
-                `;
-                
-                card.innerHTML = `
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                        <h3 style="margin: 0; color: #00d4ff; font-size: 18px; font-weight: bold;">
-                            ${escapeHTML(auction.title)}
-                        </h3>
-                        <span style="background: ${auction.status === 'active' ? '#00d4ff' : '#ff6b6b'}; 
-                                     color: #0a0e27; padding: 4px 12px; border-radius: 12px; 
-                                     font-size: 12px; font-weight: bold; text-transform: uppercase;">
-                            ${escapeHTML(auction.status)}
-                        </span>
-                    </div>
-                    
-                    <p style="color: #a0aec0; font-size: 14px; margin: 10px 0; min-height: 40px;">
-                        ${escapeHTML(auction.description)}
-                    </p>
-                    
-                    <div style="margin: 15px 0;">
-                        <div style="font-size: 32px; font-weight: bold; color: #ff6b6b; margin: 10px 0;">
-                            $${auction.current_bid.toFixed(2)}
-                        </div>
-                        <div style="font-size: 12px; color: #a0aec0;">
-                            <span>💰 Bids: ${auction.bid_count}</span> • 
-                            <span>🏆 Leader: ${escapeHTML(auction.highest_bidder)}</span>
-                        </div>
-                    </div>
-                    
-                    <div style="background: rgba(0, 212, 255, 0.2); border-radius: 8px; 
-                                padding: 12px; text-align: center; cursor: pointer; 
-                                border: 1px solid #00d4ff; transition: background 0.2s;">
-                        <span style="color: #00d4ff; font-weight: bold; font-size: 14px;">
-                            💎 Click to Bid →
-                        </span>
-                    </div>
-                `;
-                
-                // Hover effects
-                card.addEventListener('mouseenter', () => {
-                    card.style.transform = 'translateY(-4px)';
-                    card.style.boxShadow = '0 8px 12px rgba(0, 212, 255, 0.3)';
-                });
-                card.addEventListener('mouseleave', () => {
-                    card.style.transform = 'translateY(0)';
-                    card.style.boxShadow = '0 4px 6px rgba(0, 0, 0, 0.3)';
-                });
-                
+            // Render each auction as HTML card using helper function
+            auctions.forEach((auction, index) => {
+                console.log(`  ➕ Adding card ${index + 1}/${auctions.length}: ${auction.title} ($${auction.current_bid})`);
+                const card = createAuctionCard(auction);
                 auctionContainer.appendChild(card);
             });
             
-            console.log(`✅ Displayed ${auctions.length} auctions as HTML cards`);
+            console.log(`✅ Successfully rendered ${auctions.length} auction cards`);
         }
         
         // Helper function to escape HTML
@@ -2006,6 +1998,155 @@
             const div = document.createElement('div');
             div.textContent = str;
             return div.innerHTML;
+        }
+        
+        // ============ UPDATE SINGLE AUCTION (WEBSOCKET LIVE UPDATE) ============
+        function updateAuctionDisplay(auction) {
+            console.log(`🔄 Updating auction display for: ${auction.id}`);
+            
+            const auctionContainer = document.getElementById('auction-html-container');
+            if (!auctionContainer) {
+                console.warn('⚠️ Auction container not found, creating it...');
+                // If container doesn't exist, create it and add the auction
+                displayAuctionsHTML([auction]);
+                return;
+            }
+            
+            // Check if auction card already exists
+            let existingCard = auctionContainer.querySelector(`[data-auction-id="${auction.id}"]`);
+            
+            if (existingCard) {
+                console.log(`  ↻ Updating existing card for ${auction.id}`);
+                // Update existing card
+                updateAuctionCard(existingCard, auction);
+            } else {
+                console.log(`  ➕ Adding new card for ${auction.id}`);
+                // Add new card
+                const newCard = createAuctionCard(auction);
+                auctionContainer.appendChild(newCard);
+                
+                // Update auction count
+                const auctionCount = document.getElementById('auction-count');
+                if (auctionCount) {
+                    const currentCards = auctionContainer.querySelectorAll('[data-auction-id]').length;
+                    auctionCount.textContent = `${currentCards} auctions loaded`;
+                }
+            }
+        }
+        
+        // ============ CREATE AUCTION CARD ELEMENT ============
+        function createAuctionCard(auction) {
+            const card = document.createElement('div');
+            card.setAttribute('data-auction-id', auction.id);
+            card.style.cssText = `
+                background: rgba(17, 22, 51, 0.95);
+                border: 2px solid ${auction.status === 'active' ? '#00d4ff' : '#ff6b6b'};
+                border-radius: 12px;
+                padding: 20px;
+                color: white;
+                font-family: Arial, sans-serif;
+                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+                transition: transform 0.2s, box-shadow 0.2s;
+            `;
+            
+            card.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <h3 style="margin: 0; color: #00d4ff; font-size: 18px; font-weight: bold;" class="auction-title">
+                        ${escapeHTML(auction.title)}
+                    </h3>
+                    <span class="auction-status" style="background: ${auction.status === 'active' ? '#00d4ff' : '#ff6b6b'}; 
+                                 color: #0a0e27; padding: 4px 12px; border-radius: 12px; 
+                                 font-size: 12px; font-weight: bold; text-transform: uppercase;">
+                        ${escapeHTML(auction.status)}
+                    </span>
+                </div>
+                
+                <p style="color: #a0aec0; font-size: 14px; margin: 10px 0; min-height: 40px;" class="auction-description">
+                    ${escapeHTML(auction.description)}
+                </p>
+                
+                <div style="margin: 15px 0;">
+                    <div class="auction-bid" style="font-size: 32px; font-weight: bold; color: #ff6b6b; margin: 10px 0;">
+                        $${auction.current_bid.toFixed(2)}
+                    </div>
+                    <div style="font-size: 12px; color: #a0aec0;">
+                        <span class="auction-bid-count">💰 Bids: ${auction.bid_count}</span> • 
+                        <span class="auction-leader">🏆 Leader: ${escapeHTML(auction.highest_bidder)}</span>
+                    </div>
+                </div>
+                
+                <div style="background: rgba(0, 212, 255, 0.2); border-radius: 8px; 
+                            padding: 12px; text-align: center; cursor: pointer; 
+                            border: 1px solid #00d4ff; transition: background 0.2s;">
+                    <span style="color: #00d4ff; font-weight: bold; font-size: 14px;">
+                        💎 Click to Bid →
+                    </span>
+                </div>
+            `;
+            
+            // Hover effects
+            card.addEventListener('mouseenter', () => {
+                card.style.transform = 'translateY(-4px)';
+                card.style.boxShadow = '0 8px 12px rgba(0, 212, 255, 0.3)';
+            });
+            card.addEventListener('mouseleave', () => {
+                card.style.transform = 'translateY(0)';
+                card.style.boxShadow = '0 4px 6px rgba(0, 0, 0, 0.3)';
+            });
+            
+            return card;
+        }
+        
+        // ============ UPDATE EXISTING AUCTION CARD ============
+        function updateAuctionCard(card, auction) {
+            // Update border color based on status
+            card.style.border = `2px solid ${auction.status === 'active' ? '#00d4ff' : '#ff6b6b'}`;
+            
+            // Update title
+            const titleEl = card.querySelector('.auction-title');
+            if (titleEl) titleEl.textContent = auction.title;
+            
+            // Update status badge
+            const statusEl = card.querySelector('.auction-status');
+            if (statusEl) {
+                statusEl.textContent = auction.status.toUpperCase();
+                statusEl.style.background = auction.status === 'active' ? '#00d4ff' : '#ff6b6b';
+            }
+            
+            // Update description
+            const descEl = card.querySelector('.auction-description');
+            if (descEl) descEl.textContent = auction.description;
+            
+            // Update current bid (with animation)
+            const bidEl = card.querySelector('.auction-bid');
+            if (bidEl) {
+                const oldBid = parseFloat(bidEl.textContent.replace('$', '').replace(',', ''));
+                const newBid = auction.current_bid;
+                
+                if (newBid > oldBid) {
+                    // Animate bid increase
+                    bidEl.style.transition = 'all 0.3s ease';
+                    bidEl.style.transform = 'scale(1.1)';
+                    bidEl.style.color = '#00ff00';
+                    
+                    setTimeout(() => {
+                        bidEl.style.transform = 'scale(1)';
+                        bidEl.style.color = '#ff6b6b';
+                    }, 300);
+                }
+                
+                bidEl.textContent = `$${newBid.toFixed(2)}`;
+            }
+            
+            // Update bid count
+            const bidCountEl = card.querySelector('.auction-bid-count');
+            if (bidCountEl) bidCountEl.textContent = `💰 Bids: ${auction.bid_count}`;
+            
+            // Update leader
+            const leaderEl = card.querySelector('.auction-leader');
+            if (leaderEl) leaderEl.textContent = `🏆 Leader: ${escapeHTML(auction.highest_bidder)}`;
+            
+            console.log(`  ✅ Card updated - Bid: $${auction.current_bid}, Count: ${auction.bid_count}`);
         }
         
             // ============ RETRY CONNECTION HANDLER ============
@@ -2328,6 +2469,73 @@
                     }
                     
                     console.groupEnd();
+                },
+                
+                // ============ AUCTION-SPECIFIC DIAGNOSTICS ============
+                getAuctions: () => {
+                    const container = document.getElementById('auction-html-container');
+                    if (!container) {
+                        console.warn('⚠️ No auction container found');
+                        return [];
+                    }
+                    const cards = container.querySelectorAll('[data-auction-id]');
+                    const auctions = Array.from(cards).map(card => ({
+                        id: card.getAttribute('data-auction-id'),
+                        title: card.querySelector('.auction-title')?.textContent,
+                        bid: card.querySelector('.auction-bid')?.textContent,
+                        status: card.querySelector('.auction-status')?.textContent
+                    }));
+                    console.log(`Found ${auctions.length} rendered auctions:`, auctions);
+                    return auctions;
+                },
+                
+                testFetch: async () => {
+                    console.log('🧪 Testing /api/auctions fetch...');
+                    await fetchAndDisplayAuctions();
+                },
+                
+                checkAuctionAPI: async () => {
+                    console.group('🔍 Checking Auction API');
+                    try {
+                        const response = await fetch('/api/auctions');
+                        console.log('Status:', response.status, response.statusText);
+                        console.log('Headers:', {
+                            'Content-Type': response.headers.get('Content-Type'),
+                            'CORS': response.headers.get('Access-Control-Allow-Origin')
+                        });
+                        
+                        if (response.ok) {
+                            const data = await response.json();
+                            console.log('✅ API returned', data.length, 'auctions');
+                            console.table(data);
+                        } else {
+                            console.error('❌ API error:', response.status);
+                        }
+                    } catch (error) {
+                        console.error('❌ Fetch failed:', error);
+                    }
+                    console.groupEnd();
+                },
+                
+                refreshAuctions: async () => {
+                    console.log('🔄 Refreshing auctions...');
+                    await fetchAndDisplayAuctions();
+                },
+                
+                simulateAuctionUpdate: (auction) => {
+                    console.log('🧪 Simulating auction update for:', auction);
+                    if (!auction) {
+                        auction = {
+                            id: 'test-' + Date.now(),
+                            title: 'Test Auction',
+                            description: 'This is a test auction',
+                            current_bid: 100,
+                            bid_count: 5,
+                            highest_bidder: 'test_user',
+                            status: 'active'
+                        };
+                    }
+                    updateAuctionDisplay(auction);
                 }
             };
             
