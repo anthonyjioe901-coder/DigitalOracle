@@ -495,17 +495,27 @@
             width: 8px;
             height: 8px;
             border-radius: 50%;
+            background: #666;
+        }
+        
+        .health-dot.success {
             background: #00ff88;
             animation: pulse 2s infinite;
         }
         
         .health-dot.warning {
             background: #ffd700;
+            animation: pulse 2s infinite;
         }
         
         .health-dot.error {
             background: #ff6b6b;
             animation: none;
+        }
+        
+        #manual-reconnect-btn:hover {
+            background: rgba(0, 212, 255, 0.4);
+            transform: scale(1.05);
         }
         
         /* Accessibility */
@@ -595,6 +605,12 @@
                 </div>
                 <div class="status-item">
                     <span id="auction-count">Loading auctions...</span>
+                </div>
+                <!-- Health indicator with manual retry -->
+                <div class="status-item" id="health-indicator" style="display: none;">
+                    <div id="health-dot" class="health-dot"></div>
+                    <span id="health-text">Server: Checking...</span>
+                    <button id="manual-reconnect-btn" style="display: none; margin-left: 10px; padding: 4px 8px; font-size: 12px; background: rgba(0, 212, 255, 0.2); border: 1px solid #00d4ff; color: #00d4ff; border-radius: 4px; cursor: pointer;" aria-label="Manually retry connection">↻ Retry</button>
                 </div>
             </div>
             <div class="bid-input-form">
@@ -754,6 +770,10 @@
             } else {
                 // Re-enable submission buttons
                 if (bidBtn && !bidBtn.dataset.permanentlyDisabled) {
+                    // Clear transient submitting flag if present
+                    if (bidBtn.dataset.submitting) {
+                        delete bidBtn.dataset.submitting;
+                    }
                     bidBtn.disabled = false;
                     bidBtn.style.opacity = '1';
                     bidBtn.style.cursor = 'pointer';
@@ -774,6 +794,12 @@
                 }
                 
                 logConnection('info', 'ui', 'UI elements enabled - backend connected');
+            }
+            
+            // Show manual reconnect button when connected==false (handled in showConnectionBanner), hide when online
+            const manualBtn = document.getElementById('manual-reconnect-btn');
+            if (manualBtn) {
+                manualBtn.style.display = connected ? 'none' : 'block';
             }
         }
         
@@ -856,6 +882,10 @@
                     connectivityState.consecutiveFailures++;
                     connectivityState.totalFailures++;
                     
+                    // CRITICAL: Immediately disable UI to prevent user actions
+                    updateUIState(false);
+                    updateHealthIndicator('error', 'Server: Disconnected');
+                    
                     trackConnectionAttempt('websocket', false, {
                         code: event.code,
                         reason: event.reason,
@@ -869,8 +899,6 @@
                         consecutiveFailures: connectivityState.consecutiveFailures
                     });
                     
-                    updateHealthIndicator('error', 'Server: Disconnected');
-                    updateUIState(false);
                     scheduleReconnect();
                 };
                 
@@ -878,14 +906,15 @@
                     connectivityState.consecutiveFailures++;
                     connectivityState.totalFailures++;
                     
+                    // CRITICAL: Immediately disable UI on error
+                    updateUIState(false);
+                    updateHealthIndicator('error', 'Server: Connection Error');
+                    
                     logConnection('error', 'websocket', '❌ WebSocket error', {
                         error: error.toString(),
                         readyState: ws.readyState,
                         consecutiveFailures: connectivityState.consecutiveFailures
                     });
-                    
-                    updateHealthIndicator('error', 'Server: Connection Error');
-                    updateUIState(false);
                 };
                 
             } catch (error) {
@@ -903,6 +932,8 @@
             }
         }
         
+        let reconnectCountdownInterval = null;
+        
         function scheduleReconnect() {
             if (reconnectTimeout) {
                 logConnection('info', 'websocket', 'Reconnect already scheduled, skipping');
@@ -918,18 +949,47 @@
                 consecutiveFailures: connectivityState.consecutiveFailures
             });
             
-            showConnectionBanner(
-                `Connection lost. Reconnecting in ${Math.round(delay / 1000)}s (attempt ${reconnectAttempts})...`,
-                'warning'
-            );
+            // ENHANCEMENT: Show live countdown with progress
+            let remainingSeconds = Math.round(delay / 1000);
+            const updateMessage = () => {
+                if (remainingSeconds > 0) {
+                    showConnectionBanner(
+                        `Connection lost. Reconnecting in ${remainingSeconds}s (attempt ${reconnectAttempts})...`,
+                        'warning',
+                        true // Show retry button
+                    );
+                    remainingSeconds--;
+                } else {
+                    showConnectionBanner('Reconnecting now...', 'warning');
+                }
+            };
+            
+            updateMessage(); // Show immediately
+            
+            // Clear any existing countdown
+            if (reconnectCountdownInterval) {
+                clearInterval(reconnectCountdownInterval);
+            }
+            
+            // Update every second to show progress
+            reconnectCountdownInterval = setInterval(updateMessage, 1000);
             
             reconnectTimeout = setTimeout(async () => {
                 reconnectTimeout = null;
                 
+                // Clear countdown
+                if (reconnectCountdownInterval) {
+                    clearInterval(reconnectCountdownInterval);
+                    reconnectCountdownInterval = null;
+                }
+                
                 logConnection('info', 'health', 'Checking server health before reconnect');
+                showConnectionBanner('Checking server status...', 'warning');
+                
                 const healthy = await checkServerHealth();
                 
                 if (healthy) {
+                    showConnectionBanner('Server available. Connecting...', 'warning');
                     initializeWebSocket();
                 } else {
                     logConnection('error', 'health', 'Server still unhealthy, scheduling another reconnect');
@@ -1068,12 +1128,13 @@
             indicator.style.display = 'flex';
             dot.className = 'health-dot';
             
-            // Synchronize with actual connectivity state
+            // CRITICAL: Synchronize with actual connectivity state
+            // Only show "healthy" when BOTH server AND WebSocket are connected
             const actualStatus = connectivityState.serverHealthy && connectivityState.wsConnected 
                 ? 'healthy' 
                 : connectivityState.serverHealthy 
-                    ? 'timeout' 
-                    : 'error';
+                    ? 'timeout' // Server OK but WS disconnected
+                    : 'error';  // Server unreachable
             
             logConnection('info', 'ui', 'Health indicator updated', {
                 requestedStatus: status,
@@ -1083,15 +1144,19 @@
                 wsConnected: connectivityState.wsConnected
             });
             
+            // FORCE indicator to match actual state (ignore requested status if wrong)
             if (actualStatus === 'healthy') {
                 dot.classList.add('success');
-                healthText.textContent = text || 'Server: Online';
+                healthText.textContent = 'Server: Online';
+                hideConnectionBanner(); // Hide any lingering banners
             } else if (actualStatus === 'timeout') {
                 dot.classList.add('warning');
-                healthText.textContent = text || 'Server: WebSocket Disconnected';
+                healthText.textContent = 'Server: Reconnecting...';
+                // Keep banner visible if showing reconnect attempts
             } else {
                 dot.classList.add('error');
-                healthText.textContent = text || 'Server: Offline';
+                healthText.textContent = 'Server: Offline';
+                // Keep banner visible
             }
         }
         
@@ -1102,12 +1167,29 @@
             
             bannerMessage.textContent = message;
             banner.className = `connection-banner visible ${type}`;
-            retryBtn.style.display = showRetry ? 'block' : 'none';
+            
+            // ENHANCEMENT: Always show retry button during connection issues
+            retryBtn.style.display = (type === 'error' || type === 'warning' || showRetry) ? 'block' : 'none';
+
+            // Also expose manual retry in the info bar when banner is visible
+            const manualBtn = document.getElementById('manual-reconnect-btn');
+            if (manualBtn) {
+                manualBtn.style.display = retryBtn.style.display;
+            }
+            
+            // Log banner visibility for debugging
+            logConnection('info', 'ui', 'Connection banner shown', {
+                message,
+                type,
+                showRetry: retryBtn.style.display !== 'none'
+            });
         }
         
         function hideConnectionBanner() {
             const banner = document.getElementById('connection-banner');
             banner.classList.remove('visible');
+            
+            logConnection('info', 'ui', 'Connection banner hidden');
         }
         
         function showErrorState() {
@@ -1423,64 +1505,77 @@
             document.getElementById('retry-connection').addEventListener('click', async () => {
                 logConnection('info', 'user_action', 'User clicked Retry Connection button', {
                     currentState: connectivityState,
-                    retries: connectionRetries
+                    retries: connectionRetries,
+                    wsConnected: connectivityState.wsConnected,
+                    serverHealthy: connectivityState.serverHealthy
                 });
                 
-                // Reset retry counter
-                connectionRetries = 0;
+                // Cancel any pending reconnection
+                if (reconnectTimeout) {
+                    clearTimeout(reconnectTimeout);
+                    reconnectTimeout = null;
+                }
+                if (reconnectCountdownInterval) {
+                    clearInterval(reconnectCountdownInterval);
+                    reconnectCountdownInterval = null;
+                }
                 
-                // Show loading state with feedback
-                hideErrorState();
-                document.getElementById('loading-overlay').classList.add('active');
-                document.querySelector('.loading-text').textContent = 'Attempting to reconnect...';
+                // Reset attempts for immediate reconnection
+                reconnectAttempts = 0;
                 
+                // Show immediate feedback
+                showConnectionBanner('Manual retry initiated. Checking server...', 'warning');
                 showToast('info', 'Retrying Connection', 'Checking server availability...');
                 
                 // Perform health check first
                 const healthy = await checkServerHealth();
                 
                 if (healthy) {
-                    logConnection('info', 'user_action', 'Retry successful - server is healthy');
+                    logConnection('info', 'user_action', 'Manual retry successful - server is healthy');
                     
-                    showToast('success', 'Connection Restored!', 
-                        'Server is now available. Reloading page...');
-                    
-                    setTimeout(() => {
-                        logConnection('info', 'user_action', 'Reloading page after successful retry');
-                        location.reload();
-                    }, 1000);
+                    // If WebSocket not connected, reconnect it
+                    if (!connectivityState.wsConnected) {
+                        showConnectionBanner('Server available. Establishing connection...', 'warning');
+                        initializeWebSocket();
+                    } else {
+                        // Already connected, just hide banner
+                        hideConnectionBanner();
+                        showToast('success', 'Already Connected!', 
+                            'Your connection to the server is active.');
+                    }
                 } else {
-                    logConnection('error', 'user_action', 'Retry failed - server still unavailable', {
+                    logConnection('error', 'user_action', 'Manual retry failed - server still unavailable', {
                         consecutiveFailures: connectivityState.consecutiveFailures,
                         totalFailures: connectivityState.totalFailures
                     });
                     
-                    // Show detailed error with next steps
-                    document.getElementById('loading-overlay').classList.remove('active');
-                    showErrorState();
-                    
-                    const errorDesc = document.querySelector('.error-description');
-                    if (errorDesc) {
-                        errorDesc.innerHTML = `
-                            <strong>Connection Failed</strong><br><br>
-                            The server is still unavailable after retry.<br><br>
-                            <strong>What to try next:</strong><br>
-                            1. Check your internet connection<br>
-                            2. Wait 1-2 minutes and try again (server may be restarting)<br>
-                            3. Clear your browser cache and refresh<br>
-                            4. Try a different browser or device<br><br>
-                            <strong>Diagnostics:</strong><br>
-                            • Consecutive failures: ${connectivityState.consecutiveFailures}<br>
-                            • Total attempts: ${connectivityState.totalFailures}<br>
-                            • Last attempt: ${new Date().toLocaleTimeString()}<br>
-                            • Status: Server unreachable (timeout or offline)
-                        `;
-                    }
+                    // Schedule automatic reconnect
+                    showConnectionBanner(
+                        `Server still offline. Will retry automatically in a moment...`,
+                        'error',
+                        true
+                    );
                     
                     showToast('error', 'Still Offline', 
-                        'Server is not responding. Please check the error screen for next steps.');
+                        'Server is not responding. Automatic reconnection will continue.');
+                    
+                    // Resume automatic reconnection
+                    scheduleReconnect();
                 }
             });
+
+            // Manual reconnect button in info bar
+            const manualReconnect = document.getElementById('manual-reconnect-btn');
+            if (manualReconnect) {
+                manualReconnect.addEventListener('click', async () => {
+                    logConnection('info', 'user_action', 'Manual reconnect button clicked', {
+                        state: connectivityState
+                    });
+                    // Delegate to existing retry button handler to reuse logic
+                    const retryBtn = document.getElementById('retry-connection');
+                    if (retryBtn) retryBtn.click();
+                });
+            }
             
             document.getElementById('check-status-btn').addEventListener('click', async () => {
                 logConnection('info', 'user_action', 'User clicked Check Status button', {
@@ -1823,8 +1918,15 @@
             const MAX_BID_AMOUNT = 10000000; // $10 million
             
             document.getElementById('bid-btn').addEventListener('click', async () => {
-                const input = document.getElementById('bid-amount');
-                const amount = parseFloat(input.value);
+                        const input = document.getElementById('bid-amount');
+                        const amount = parseFloat(input.value);
+                        const bidBtn = document.getElementById('bid-btn');
+
+                        // Prevent double submissions: disable button immediately
+                        if (bidBtn) {
+                            bidBtn.disabled = true;
+                            bidBtn.dataset.submitting = '1';
+                        }
                 
                 // Check backend connectivity FIRST
                 if (!connectivityState.serverHealthy || !connectivityState.wsConnected) {
@@ -1880,6 +1982,13 @@
                     showToast('success', 'Bid Submitted', 
                         `Your bid of $${amount.toFixed(2)} is being processed...`);
                     input.value = '';
+                    // Re-enable bid button after short delay (or rely on server confirmation to re-enable)
+                    setTimeout(() => {
+                        if (bidBtn) {
+                            bidBtn.disabled = false;
+                            delete bidBtn.dataset.submitting;
+                        }
+                    }, 1500);
                     
                     logConnection('info', 'user_action', 'Bid submitted successfully', {
                         amount
