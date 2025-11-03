@@ -199,20 +199,35 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	clientsMutex.Lock()
 	clients[client] = true
+	totalClients := len(clients)
 	clientsMutex.Unlock()
 
-	log.Printf("✅ Client connected: %s (total: %d)\n", client.id, len(clients))
+	log.Printf("✅ Client connected: %s (total: %d)\n", client.id, totalClients)
 
-	// Send all auctions to new client
+	// Send all existing auctions to new client
 	auctionMutex.RLock()
+	auctionCount := len(auctions)
+	sentCount := 0
 	for _, auction := range auctions {
 		msg := Message{
 			Type:    "auction_update",
 			Auction: auction,
 		}
-		client.send(msg)
+		if err := client.conn.WriteJSON(msg); err != nil {
+			log.Printf("❌ Failed to send auction %s to client: %v\n", auction.ID, err)
+		} else {
+			sentCount++
+		}
 	}
 	auctionMutex.RUnlock()
+	
+	log.Printf("📤 Sent %d/%d existing auctions to client %s\n", sentCount, auctionCount, client.id)
+
+	// Broadcast updated client count to all clients
+	clientCountMsg := Message{
+		Type: "client_count_update",
+	}
+	broadcast <- clientCountMsg
 
 	// Start ping/pong handlers for keeping connection alive
 	go writePump(client)

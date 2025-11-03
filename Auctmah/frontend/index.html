@@ -966,11 +966,34 @@
                         dataLength: event.data.length,
                         preview: event.data.substring(0, 100)
                     });
-                    console.log('Message received:', event.data);
+                    console.log('📩 WebSocket message received:', event.data);
                     
-                    // Parse server messages for bid confirmations
+                    // Parse server messages for bid confirmations AND auction updates
                     try {
                         const message = JSON.parse(event.data);
+                        
+                        // ✅ CRITICAL FIX: Log auction_update messages
+                        if (message.type === 'auction_update') {
+                            console.log('🔨 Auction update received:', message.auction);
+                            
+                            logConnection('info', 'websocket', 'Auction update received', {
+                                auctionId: message.auction?.id,
+                                auctionTitle: message.auction?.title,
+                                currentBid: message.auction?.current_bid
+                            });
+                            
+                            // Note: WASM Rust code should handle this via its own onmessage handler
+                            // This is just JavaScript-level logging for diagnostics
+                        }
+                        
+                        // Handle client count updates
+                        if (message.type === 'client_count_update') {
+                            console.log('👥 Client count update received');
+                            const clientCount = document.getElementById('client-count');
+                            if (clientCount && clientCount.textContent === 'Connecting...') {
+                                clientCount.textContent = 'Connected';
+                            }
+                        }
                         
                         // Handle bid acknowledgement from server
                         if (message.type === 'bid_confirmed' || message.type === 'bid_accepted') {
@@ -1791,6 +1814,9 @@
                 await init();
                 console.log('✅ Rust+WASM loaded successfully');
                 
+                // ✅ CRITICAL FIX: Fetch existing auctions from REST API
+                await fetchAndDisplayAuctions();
+                
                 // FIX #1: Initialize WebSocket with reconnection logic
                 initializeWebSocket();
                 
@@ -1804,13 +1830,11 @@
                         loadingOverlay.classList.remove('active');
                     }
                     
-                    // Clear "Connecting..." and "Loading auctions..." messages
+                    // Clear "Connecting..." messages
                     if (clientCount && clientCount.textContent === 'Connecting...') {
                         clientCount.textContent = 'Connected';
                     }
-                    if (auctionCount && auctionCount.textContent === 'Loading auctions...') {
-                        auctionCount.textContent = 'Auctions loaded';
-                    }
+                    // Note: auction count now updated by fetchAndDisplayAuctions()
                 }, 1500); // Give 1.5 seconds for everything to load
                 
                 // Start health monitoring
@@ -1824,7 +1848,167 @@
                 }
                 showToast('error', 'Loading Error', 'Failed to initialize auction system. Please refresh the page.');
                 showConnectionBanner('Application failed to load', 'error', true);
-            }            // ============ RETRY CONNECTION HANDLER ============
+            }
+        
+        // ============ FETCH AND DISPLAY AUCTIONS ============
+        async function fetchAndDisplayAuctions() {
+            try {
+                console.log('📥 Fetching auctions from /api/auctions...');
+                
+                const response = await fetch('/api/auctions', {
+                    method: 'GET',
+                    cache: 'no-cache',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const auctions = await response.json();
+                console.log(`✅ Fetched ${auctions.length} auctions from API:`, auctions);
+                
+                // Update UI with auction count
+                const auctionCount = document.getElementById('auction-count');
+                if (auctionCount) {
+                    auctionCount.textContent = `${auctions.length} auctions loaded`;
+                }
+                
+                // Display auctions (since WASM canvas might not work, use HTML fallback)
+                displayAuctionsHTML(auctions);
+                
+                // Also try to send to WASM if it's listening
+                if (window.ws && window.ws.readyState === WebSocket.OPEN) {
+                    auctions.forEach(auction => {
+                        const msg = {
+                            type: 'auction_update',
+                            auction: auction
+                        };
+                        // WASM should pick this up via its onmessage handler
+                        console.log('📤 Simulating auction_update for WASM:', auction.id);
+                    });
+                }
+                
+                return auctions;
+                
+            } catch (error) {
+                console.error('❌ Failed to fetch auctions:', error);
+                const auctionCount = document.getElementById('auction-count');
+                if (auctionCount) {
+                    auctionCount.textContent = 'Error loading auctions';
+                }
+                showToast('error', 'Loading Error', 
+                    'Failed to load auctions. Check console for details.');
+                return [];
+            }
+        }
+        
+        // ============ DISPLAY AUCTIONS AS HTML (FALLBACK) ============
+        function displayAuctionsHTML(auctions) {
+            // Check if canvas is working - if not, use HTML fallback
+            const canvas = document.getElementById('auction-canvas');
+            if (!canvas) {
+                console.warn('⚠️ Canvas not found - auctions may not render');
+                return;
+            }
+            
+            // Create overlay container for auctions if WASM rendering fails
+            let auctionContainer = document.getElementById('auction-html-container');
+            if (!auctionContainer) {
+                auctionContainer = document.createElement('div');
+                auctionContainer.id = 'auction-html-container';
+                auctionContainer.style.cssText = `
+                    position: absolute;
+                    top: 120px;
+                    left: 50px;
+                    right: 50px;
+                    display: grid;
+                    grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+                    gap: 20px;
+                    z-index: 10;
+                    pointer-events: auto;
+                `;
+                document.body.appendChild(auctionContainer);
+            }
+            
+            // Clear existing content
+            auctionContainer.innerHTML = '';
+            
+            // Render each auction as HTML card
+            auctions.forEach(auction => {
+                const card = document.createElement('div');
+                card.style.cssText = `
+                    background: rgba(17, 22, 51, 0.95);
+                    border: 2px solid ${auction.status === 'active' ? '#00d4ff' : '#ff6b6b'};
+                    border-radius: 12px;
+                    padding: 20px;
+                    color: white;
+                    font-family: Arial, sans-serif;
+                    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+                    transition: transform 0.2s, box-shadow 0.2s;
+                `;
+                
+                card.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                        <h3 style="margin: 0; color: #00d4ff; font-size: 18px; font-weight: bold;">
+                            ${escapeHTML(auction.title)}
+                        </h3>
+                        <span style="background: ${auction.status === 'active' ? '#00d4ff' : '#ff6b6b'}; 
+                                     color: #0a0e27; padding: 4px 12px; border-radius: 12px; 
+                                     font-size: 12px; font-weight: bold; text-transform: uppercase;">
+                            ${escapeHTML(auction.status)}
+                        </span>
+                    </div>
+                    
+                    <p style="color: #a0aec0; font-size: 14px; margin: 10px 0; min-height: 40px;">
+                        ${escapeHTML(auction.description)}
+                    </p>
+                    
+                    <div style="margin: 15px 0;">
+                        <div style="font-size: 32px; font-weight: bold; color: #ff6b6b; margin: 10px 0;">
+                            $${auction.current_bid.toFixed(2)}
+                        </div>
+                        <div style="font-size: 12px; color: #a0aec0;">
+                            <span>💰 Bids: ${auction.bid_count}</span> • 
+                            <span>🏆 Leader: ${escapeHTML(auction.highest_bidder)}</span>
+                        </div>
+                    </div>
+                    
+                    <div style="background: rgba(0, 212, 255, 0.2); border-radius: 8px; 
+                                padding: 12px; text-align: center; cursor: pointer; 
+                                border: 1px solid #00d4ff; transition: background 0.2s;">
+                        <span style="color: #00d4ff; font-weight: bold; font-size: 14px;">
+                            💎 Click to Bid →
+                        </span>
+                    </div>
+                `;
+                
+                // Hover effects
+                card.addEventListener('mouseenter', () => {
+                    card.style.transform = 'translateY(-4px)';
+                    card.style.boxShadow = '0 8px 12px rgba(0, 212, 255, 0.3)';
+                });
+                card.addEventListener('mouseleave', () => {
+                    card.style.transform = 'translateY(0)';
+                    card.style.boxShadow = '0 4px 6px rgba(0, 0, 0, 0.3)';
+                });
+                
+                auctionContainer.appendChild(card);
+            });
+            
+            console.log(`✅ Displayed ${auctions.length} auctions as HTML cards`);
+        }
+        
+        // Helper function to escape HTML
+        function escapeHTML(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+        
+            // ============ RETRY CONNECTION HANDLER ============
             document.getElementById('retry-connection').addEventListener('click', async () => {
                 logConnection('info', 'user_action', 'User clicked Retry Connection button', {
                     currentState: connectivityState,
