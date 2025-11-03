@@ -1074,22 +1074,43 @@
                 return;
             }
             
-            const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), maxReconnectDelay);
+            // Circuit breaker: increase delay significantly if breaker is open
+            const baseDelay = circuitBreakerOpen 
+                ? maxReconnectDelay  // Max delay when circuit open
+                : Math.min(1000 * Math.pow(2, reconnectAttempts), maxReconnectDelay);
+            
+            const delay = baseDelay;
             reconnectAttempts++;
             
             logConnection('warn', 'websocket', `Scheduling reconnect in ${delay}ms`, {
                 attempt: reconnectAttempts,
                 delay,
-                consecutiveFailures: connectivityState.consecutiveFailures
+                consecutiveFailures: connectivityState.consecutiveFailures,
+                circuitBreakerOpen
             });
+            
+            // Enhanced message based on failure analysis
+            let bannerMessage = `Connection lost. Reconnecting in {seconds}s (attempt ${reconnectAttempts})...`;
+            
+            if (circuitBreakerOpen) {
+                bannerMessage = 'Service experiencing issues. Retrying in {seconds}s...';
+            } else if (connectivityState.lastFailureReason) {
+                if (connectivityState.lastFailureReason.includes('cold start')) {
+                    bannerMessage = 'Server starting (cold start). Waiting {seconds}s...';
+                } else if (connectivityState.lastFailureReason.includes('timeout')) {
+                    bannerMessage = 'Server slow to respond. Retrying in {seconds}s...';
+                } else if (connectivityState.lastFailureReason.includes('Network')) {
+                    bannerMessage = 'Network issue detected. Retrying in {seconds}s...';
+                }
+            }
             
             // ENHANCEMENT: Show live countdown with progress
             let remainingSeconds = Math.round(delay / 1000);
             const updateMessage = () => {
                 if (remainingSeconds > 0) {
                     showConnectionBanner(
-                        `Connection lost. Reconnecting in ${remainingSeconds}s (attempt ${reconnectAttempts})...`,
-                        'warning',
+                        bannerMessage.replace('{seconds}', remainingSeconds.toString()),
+                        circuitBreakerOpen ? 'error' : 'warning',
                         true // Show retry button
                     );
                     remainingSeconds--;
@@ -1140,8 +1161,82 @@
         const HEALTH_CHECK_TIMEOUT = 5000; // 5 seconds
         const HEALTH_CHECK_INTERVAL = 30000; // 30 seconds
         const LOADING_TIMEOUT = 15000; // 15 seconds for initial load
+        const COLD_START_THRESHOLD = 15000; // 15s indicates possible cold start
+        const CIRCUIT_BREAKER_THRESHOLD = 10; // Open circuit after 10 consecutive failures
+        
+        // Circuit breaker state
+        let circuitBreakerOpen = false;
+        let circuitBreakerOpenedAt = null;
+        const CIRCUIT_BREAKER_RESET_TIME = 60000; // 1 minute
+        
+        // Detect failure type for detailed messaging
+        function analyzeFailure(error, responseTime, statusCode) {
+            const analysis = {
+                type: 'unknown',
+                userMessage: 'Connection failed',
+                technicalReason: error?.message || 'Unknown error',
+                isInfrastructure: false,
+                retryRecommendation: 'immediate'
+            };
+            
+            // Render cold start detection (long response time)
+            if (responseTime > COLD_START_THRESHOLD) {
+                analysis.type = 'cold_start';
+                analysis.userMessage = 'Server is starting up (cold start)';
+                analysis.technicalReason = `Response time ${responseTime}ms exceeds cold start threshold`;
+                analysis.isInfrastructure = true;
+                analysis.retryRecommendation = 'wait_30s';
+                return analysis;
+            }
+            
+            // Timeout
+            if (error?.name === 'AbortError' || responseTime >= HEALTH_CHECK_TIMEOUT) {
+                analysis.type = 'timeout';
+                analysis.userMessage = 'Server timeout - may be overloaded or starting';
+                analysis.technicalReason = `Request exceeded ${HEALTH_CHECK_TIMEOUT}ms timeout`;
+                analysis.isInfrastructure = true;
+                analysis.retryRecommendation = 'exponential_backoff';
+                return analysis;
+            }
+            
+            // Network/DNS errors
+            if (error?.message?.includes('Failed to fetch') || error?.message?.includes('NetworkError')) {
+                analysis.type = 'network';
+                analysis.userMessage = 'Network error - check your internet connection';
+                analysis.technicalReason = 'Failed to reach server (DNS/network issue)';
+                analysis.isInfrastructure = false;
+                analysis.retryRecommendation = 'wait_10s';
+                return analysis;
+            }
+            
+            // HTTP status codes
+            if (statusCode) {
+                if (statusCode === 503) {
+                    analysis.type = 'service_unavailable';
+                    analysis.userMessage = 'Service temporarily unavailable';
+                    analysis.technicalReason = 'HTTP 503 - Server maintenance or deployment';
+                    analysis.isInfrastructure = true;
+                    analysis.retryRecommendation = 'wait_60s';
+                } else if (statusCode >= 500) {
+                    analysis.type = 'server_error';
+                    analysis.userMessage = 'Server error - our team has been notified';
+                    analysis.technicalReason = `HTTP ${statusCode} - Internal server error`;
+                    analysis.isInfrastructure = true;
+                    analysis.retryRecommendation = 'exponential_backoff';
+                } else if (statusCode === 429) {
+                    analysis.type = 'rate_limited';
+                    analysis.userMessage = 'Too many requests - please wait a moment';
+                    analysis.technicalReason = 'HTTP 429 - Rate limit exceeded';
+                    analysis.isInfrastructure = false;
+                    analysis.retryRecommendation = 'wait_60s';
+                }
+            }
+            
+            return analysis;
+        }
         
         async function checkServerHealth() {
+            const startTime = performance.now();
             const controller = new AbortController();
             const timeoutId = setTimeout(() => {
                 controller.abort();
@@ -1152,16 +1247,39 @@
             
             try {
                 logConnection('info', 'health', 'Performing health check', {
-                    endpoint: '/api/health'
+                    endpoint: '/api/health',
+                    circuitBreakerOpen
                 });
+                
+                // Check circuit breaker
+                if (circuitBreakerOpen) {
+                    const timeSinceOpened = Date.now() - circuitBreakerOpenedAt;
+                    if (timeSinceOpened < CIRCUIT_BREAKER_RESET_TIME) {
+                        logConnection('warn', 'health', 'Circuit breaker open - skipping health check', {
+                            timeSinceOpened,
+                            resetIn: CIRCUIT_BREAKER_RESET_TIME - timeSinceOpened
+                        });
+                        return false;
+                    } else {
+                        // Try to close circuit breaker
+                        circuitBreakerOpen = false;
+                        circuitBreakerOpenedAt = null;
+                        logConnection('info', 'health', 'Circuit breaker reset - attempting health check');
+                    }
+                }
                 
                 const response = await fetch('/api/health', {
                     method: 'GET',
                     signal: controller.signal,
-                    cache: 'no-cache'
+                    cache: 'no-cache',
+                    headers: {
+                        'X-Client-Version': '1.0',
+                        'X-Request-ID': Date.now().toString()
+                    }
                 });
                 
                 clearTimeout(timeoutId);
+                const responseTime = performance.now() - startTime;
                 
                 if (response.ok) {
                     const data = await response.json();
@@ -1169,14 +1287,32 @@
                     connectivityState.lastHealthCheck = new Date();
                     connectivityState.consecutiveFailures = 0;
                     
+                    // Close circuit breaker on success
+                    if (circuitBreakerOpen) {
+                        circuitBreakerOpen = false;
+                        circuitBreakerOpenedAt = null;
+                        showToast('success', 'Service Restored', 'Connection to server is stable again');
+                    }
+                    
+                    // Detect slow response (possible cold start recovery)
+                    if (responseTime > 3000) {
+                        storeTelemetry('slow_health_check', {
+                            responseTime,
+                            possibleColdStart: responseTime > COLD_START_THRESHOLD,
+                            uptime: data.uptime_seconds
+                        });
+                    }
+                    
                     trackConnectionAttempt('health_check', true, {
                         status: data.status,
-                        uptime: data.uptime_seconds
+                        uptime: data.uptime_seconds,
+                        responseTime
                     });
                     
                     logConnection('info', 'health', '✅ Server healthy', {
                         status: data.status,
                         uptime: data.uptime_seconds,
+                        responseTime: `${responseTime.toFixed(0)}ms`,
                         auctions: data.auctions,
                         clients: data.active_clients
                     });
@@ -1185,48 +1321,88 @@
                     updateUIState(true);
                     return true;
                 } else {
+                    const responseTime = performance.now() - startTime;
                     connectivityState.serverHealthy = false;
                     connectivityState.consecutiveFailures++;
                     
+                    // Analyze failure for detailed messaging
+                    const analysis = analyzeFailure(null, responseTime, response.status);
+                    connectivityState.lastFailureReason = analysis.userMessage;
+                    
+                    // Open circuit breaker if threshold reached
+                    if (connectivityState.consecutiveFailures >= CIRCUIT_BREAKER_THRESHOLD && !circuitBreakerOpen) {
+                        circuitBreakerOpen = true;
+                        circuitBreakerOpenedAt = Date.now();
+                        showToast('error', 'Service Degraded', 
+                            `Multiple failures detected. Reducing retry frequency for ${CIRCUIT_BREAKER_RESET_TIME / 1000}s`);
+                        storeTelemetry('circuit_breaker_opened', {
+                            consecutiveFailures: connectivityState.consecutiveFailures
+                        });
+                    }
+                    
                     trackConnectionAttempt('health_check', false, {
                         status: response.status,
-                        statusText: response.statusText
+                        statusText: response.statusText,
+                        responseTime,
+                        analysis
                     });
                     
-                    logConnection('warn', 'health', 'Server returned non-OK status', {
+                    logConnection('warn', 'health', `Server returned non-OK status: ${analysis.userMessage}`, {
                         status: response.status,
-                        statusText: response.statusText
+                        statusText: response.statusText,
+                        responseTime: `${responseTime.toFixed(0)}ms`,
+                        analysis
                     });
                     
-                    updateHealthIndicator('error', 'Server: Offline');
+                    updateHealthIndicator('error', `Server: ${analysis.userMessage}`);
                     updateUIState(false);
                     return false;
                 }
             } catch (error) {
                 clearTimeout(timeoutId);
+                const responseTime = performance.now() - startTime;
                 connectivityState.serverHealthy = false;
                 connectivityState.consecutiveFailures++;
                 connectivityState.totalFailures++;
                 
-                trackConnectionAttempt('health_check', false, {
-                    error: error.message,
-                    name: error.name
-                });
+                // Analyze failure for detailed messaging
+                const analysis = analyzeFailure(error, responseTime, null);
+                connectivityState.lastFailureReason = analysis.userMessage;
                 
-                if (error.name === 'AbortError') {
-                    logConnection('error', 'timeout', 'Health check timed out', {
-                        timeout: HEALTH_CHECK_TIMEOUT
+                // Open circuit breaker if threshold reached
+                if (connectivityState.consecutiveFailures >= CIRCUIT_BREAKER_THRESHOLD && !circuitBreakerOpen) {
+                    circuitBreakerOpen = true;
+                    circuitBreakerOpenedAt = Date.now();
+                    showToast('error', 'Service Degraded', 
+                        `Multiple failures detected. Pausing retries for ${CIRCUIT_BREAKER_RESET_TIME / 1000}s`);
+                    storeTelemetry('circuit_breaker_opened', {
+                        consecutiveFailures: connectivityState.consecutiveFailures,
+                        reason: analysis.type
                     });
-                    updateHealthIndicator('timeout', 'Server: Timeout');
-                } else {
-                    logConnection('error', 'health', 'Health check failed', {
-                        error: error.message,
-                        name: error.name,
-                        consecutiveFailures: connectivityState.consecutiveFailures
-                    });
-                    updateHealthIndicator('error', 'Server: Offline');
                 }
                 
+                trackConnectionAttempt('health_check', false, {
+                    error: error.message,
+                    name: error.name,
+                    responseTime,
+                    analysis
+                });
+                
+                storeTelemetry('health_check_failed', {
+                    error: error.message,
+                    responseTime,
+                    analysis
+                });
+                
+                logConnection('error', 'health', `Health check failed: ${analysis.userMessage}`, {
+                    error: error.message,
+                    name: error.name,
+                    responseTime: `${responseTime.toFixed(0)}ms`,
+                    consecutiveFailures: connectivityState.consecutiveFailures,
+                    analysis
+                });
+                
+                updateHealthIndicator('error', `Server: ${analysis.userMessage}`);
                 updateUIState(false);
                 return false;
             }
@@ -1909,21 +2085,73 @@
                     const telemetry = JSON.parse(localStorage.getItem('auctmah_telemetry') || '[]');
                     const failures = telemetry.filter(t => t.eventType === 'connection_failure');
                     const blocked = telemetry.filter(t => t.eventType === 'user_action_blocked');
+                    const coldStarts = telemetry.filter(t => t.eventType === 'slow_health_check' && t.possibleColdStart);
+                    const circuitBreakers = telemetry.filter(t => t.eventType === 'circuit_breaker_opened');
                     
                     console.group('📊 Auctmah Statistics');
                     console.log('Total Events:', telemetry.length);
                     console.log('Connection Failures:', failures.length);
                     console.log('Blocked User Actions:', blocked.length);
+                    console.log('Cold Starts Detected:', coldStarts.length);
+                    console.log('Circuit Breaker Activations:', circuitBreakers.length);
+                    console.log('Current Circuit Breaker:', circuitBreakerOpen ? 'OPEN' : 'CLOSED');
                     console.log('Success Rate:', ((1 - failures.length / Math.max(telemetry.length, 1)) * 100).toFixed(2) + '%');
+                    console.groupEnd();
+                },
+                infrastructure: () => {
+                    const telemetry = JSON.parse(localStorage.getItem('auctmah_telemetry') || '[]');
+                    const healthChecks = telemetry.filter(t => t.eventType === 'health_check_failed');
+                    
+                    // Analyze failure types
+                    const failureTypes = {};
+                    healthChecks.forEach(check => {
+                        const type = check.analysis?.type || 'unknown';
+                        failureTypes[type] = (failureTypes[type] || 0) + 1;
+                    });
+                    
+                    // Calculate average response times
+                    const responseTimes = connectivityState.connectionHistory
+                        .filter(h => h.responseTime)
+                        .map(h => h.responseTime);
+                    
+                    const avgResponseTime = responseTimes.length 
+                        ? (responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length).toFixed(0)
+                        : 'N/A';
+                    
+                    console.group('🏗️ Infrastructure Analysis');
+                    console.log('Deployment Platform: Render.com (assumed)');
+                    console.log('Circuit Breaker Status:', circuitBreakerOpen ? '🔴 OPEN' : '🟢 CLOSED');
+                    console.log('Failure Type Breakdown:', failureTypes);
+                    console.log('Average Response Time:', avgResponseTime + 'ms');
+                    console.log('Consecutive Failures:', connectivityState.consecutiveFailures);
+                    console.log('Last Failure Type:', connectivityState.lastFailureReason);
+                    console.log('\nRecommendations:');
+                    
+                    if (failureTypes['cold_start'] > 2) {
+                        console.log('  ⚠️ Multiple cold starts detected. Consider:');
+                        console.log('    - Upgrading Render plan to reduce spin-down');
+                        console.log('    - Implementing keep-alive pings');
+                    }
+                    if (failureTypes['timeout'] > 3) {
+                        console.log('  ⚠️ Frequent timeouts. Consider:');
+                        console.log('    - Checking server resource allocation');
+                        console.log('    - Reviewing slow database queries');
+                    }
+                    if (circuitBreakerOpen) {
+                        console.log('  � Circuit breaker is open. Service is degraded.');
+                        console.log('    - Will auto-reset in ' + 
+                            Math.round((CIRCUIT_BREAKER_RESET_TIME - (Date.now() - circuitBreakerOpenedAt)) / 1000) + 's');
+                    }
+                    
                     console.groupEnd();
                 }
             };
             
-            console.log('🔍 Diagnostics available: window.auctmahDiagnostics');
+            console.log('�🔍 Diagnostics available: window.auctmahDiagnostics');
             console.log('Commands: getState(), getLogs(), getTelemetry(), getConnectionHistory()');
             console.log('          clearLogs(), clearTelemetry(), clearHistory(), clearAll()');
             console.log('          exportLogs(), exportTelemetry(), exportAll()');
-            console.log('          forceReconnect(), printReport(), stats()');
+            console.log('          forceReconnect(), printReport(), stats(), infrastructure()');
             
             // ============ MODAL CONTROLS ============
             const modal = document.getElementById('sell-modal');
