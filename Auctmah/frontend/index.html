@@ -570,6 +570,60 @@
                 width: 95%;
                 padding: 20px;
             }
+            
+            /* Mobile-friendly connection banner */
+            .connection-banner {
+                padding: 15px 10px;
+                flex-direction: column;
+                gap: 10px;
+                font-size: 14px;
+            }
+            
+            .retry-btn {
+                width: 100%;
+                max-width: 200px;
+                padding: 10px 20px;
+                min-height: 44px;
+                font-size: 16px;
+            }
+            
+            /* Manual retry button in info bar - mobile styling */
+            #manual-reconnect-btn {
+                width: 100%;
+                max-width: 150px;
+                margin: 5px auto 0 auto !important;
+                padding: 8px 12px !important;
+                font-size: 14px !important;
+                min-height: 44px;
+            }
+            
+            /* Status items stack on mobile */
+            .status {
+                flex-direction: column;
+                width: 100%;
+                gap: 10px;
+            }
+            
+            .status-item {
+                width: 100%;
+                justify-content: center;
+            }
+            
+            #health-indicator {
+                justify-content: center;
+            }
+        }
+        
+        /* Tablet optimizations */
+        @media (min-width: 769px) and (max-width: 1024px) {
+            .connection-banner {
+                font-size: 15px;
+            }
+            
+            #manual-reconnect-btn {
+                margin-left: 8px !important;
+                padding: 6px 10px !important;
+            }
         }
     </style>
 </head>
@@ -692,7 +746,9 @@
             consecutiveFailures: 0,
             totalFailures: 0,
             userActionsBlocked: 0,
-            connectionHistory: [] // Track last 20 connection attempts
+            connectionHistory: [], // Track last 20 connection attempts
+            lastFailureReason: null, // Store last failure details for banner
+            lastFailureTimestamp: null
         };
         
         // Track connection attempts
@@ -708,8 +764,45 @@
             // Keep only last 20 attempts
             connectivityState.connectionHistory = connectivityState.connectionHistory.slice(0, 20);
             
+            // Update last failure info for banner display
+            if (!success) {
+                connectivityState.lastFailureReason = details.error || details.reason || details.statusText || 'Unknown error';
+                connectivityState.lastFailureTimestamp = new Date();
+                
+                // Telemetry: Store detailed failure info
+                storeTelemetry('connection_failure', {
+                    type,
+                    reason: connectivityState.lastFailureReason,
+                    ...details
+                });
+            }
+            
             logConnection(success ? 'info' : 'error', type, 
                 `Connection attempt ${success ? 'succeeded' : 'failed'}`, attempt);
+        }
+        
+        // Telemetry tracking for analytics
+        function storeTelemetry(eventType, data = {}) {
+            const telemetryEntry = {
+                timestamp: new Date().toISOString(),
+                eventType,
+                userAgent: navigator.userAgent,
+                connectionState: {
+                    serverHealthy: connectivityState.serverHealthy,
+                    wsConnected: connectivityState.wsConnected,
+                    consecutiveFailures: connectivityState.consecutiveFailures,
+                    totalFailures: connectivityState.totalFailures
+                },
+                ...data
+            };
+            
+            // Store telemetry in localStorage for later analysis
+            const telemetry = JSON.parse(localStorage.getItem('auctmah_telemetry') || '[]');
+            telemetry.push(telemetryEntry);
+            // Keep only last 100 telemetry entries
+            localStorage.setItem('auctmah_telemetry', JSON.stringify(telemetry.slice(-100)));
+            
+            console.log('[TELEMETRY]', eventType, telemetryEntry);
         }
         
         // Comprehensive logging system
@@ -874,6 +967,47 @@
                         preview: event.data.substring(0, 100)
                     });
                     console.log('Message received:', event.data);
+                    
+                    // Parse server messages for bid confirmations
+                    try {
+                        const message = JSON.parse(event.data);
+                        
+                        // Handle bid acknowledgement from server
+                        if (message.type === 'bid_confirmed' || message.type === 'bid_accepted') {
+                            const bidBtn = document.getElementById('bid-btn');
+                            if (bidBtn && bidBtn.dataset.submitting) {
+                                delete bidBtn.dataset.submitting;
+                                bidBtn.disabled = false;
+                                
+                                logConnection('info', 'websocket', 'Bid confirmed by server - button re-enabled', {
+                                    bidId: message.bid?.id,
+                                    amount: message.bid?.amount
+                                });
+                            }
+                        }
+                        
+                        // Handle bid rejection
+                        if (message.type === 'bid_rejected' || message.error) {
+                            const bidBtn = document.getElementById('bid-btn');
+                            if (bidBtn && bidBtn.dataset.submitting) {
+                                delete bidBtn.dataset.submitting;
+                                bidBtn.disabled = false;
+                                
+                                logConnection('warn', 'websocket', 'Bid rejected by server', {
+                                    error: message.error,
+                                    reason: message.reason
+                                });
+                                
+                                showToast('error', 'Bid Rejected', 
+                                    message.error || message.reason || 'Your bid was not accepted');
+                            }
+                        }
+                        
+                    } catch (parseError) {
+                        logConnection('warn', 'websocket', 'Failed to parse message', {
+                            error: parseError.message
+                        });
+                    }
                 };
                 
                 ws.onclose = (event) => {
@@ -1165,7 +1299,19 @@
             const bannerMessage = document.getElementById('banner-message');
             const retryBtn = document.getElementById('retry-connection');
             
-            bannerMessage.textContent = message;
+            // Enhanced message with last failure details
+            let enhancedMessage = message;
+            if ((type === 'error' || type === 'warning') && connectivityState.lastFailureReason) {
+                const timeSinceFailure = connectivityState.lastFailureTimestamp 
+                    ? Math.round((new Date() - connectivityState.lastFailureTimestamp) / 1000) 
+                    : 0;
+                
+                if (timeSinceFailure < 60) {
+                    enhancedMessage += ` • Last error: ${connectivityState.lastFailureReason}`;
+                }
+            }
+            
+            bannerMessage.textContent = enhancedMessage;
             banner.className = `connection-banner visible ${type}`;
             
             // ENHANCEMENT: Always show retry button during connection issues
@@ -1179,9 +1325,10 @@
             
             // Log banner visibility for debugging
             logConnection('info', 'ui', 'Connection banner shown', {
-                message,
+                message: enhancedMessage,
                 type,
-                showRetry: retryBtn.style.display !== 'none'
+                showRetry: retryBtn.style.display !== 'none',
+                lastFailureReason: connectivityState.lastFailureReason
             });
         }
         
@@ -1685,14 +1832,25 @@
             window.auctmahDiagnostics = {
                 getState: () => connectivityState,
                 getLogs: () => JSON.parse(localStorage.getItem('auctmah_failures') || '[]'),
+                getTelemetry: () => JSON.parse(localStorage.getItem('auctmah_telemetry') || '[]'),
                 getConnectionHistory: () => connectivityState.connectionHistory,
                 clearLogs: () => {
                     localStorage.removeItem('auctmah_failures');
                     console.log('✅ Diagnostics logs cleared');
                 },
+                clearTelemetry: () => {
+                    localStorage.removeItem('auctmah_telemetry');
+                    console.log('✅ Telemetry cleared');
+                },
                 clearHistory: () => {
                     connectivityState.connectionHistory = [];
                     console.log('✅ Connection history cleared');
+                },
+                clearAll: () => {
+                    localStorage.removeItem('auctmah_failures');
+                    localStorage.removeItem('auctmah_telemetry');
+                    connectivityState.connectionHistory = [];
+                    console.log('✅ All diagnostics data cleared');
                 },
                 exportLogs: () => {
                     const logs = JSON.parse(localStorage.getItem('auctmah_failures') || '[]');
@@ -1704,12 +1862,24 @@
                     a.click();
                     console.log('✅ Diagnostics exported');
                 },
+                exportTelemetry: () => {
+                    const telemetry = JSON.parse(localStorage.getItem('auctmah_telemetry') || '[]');
+                    const blob = new Blob([JSON.stringify(telemetry, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `auctmah-telemetry-${Date.now()}.json`;
+                    a.click();
+                    console.log('✅ Telemetry exported');
+                },
                 exportAll: () => {
                     const data = {
                         state: connectivityState,
                         failures: JSON.parse(localStorage.getItem('auctmah_failures') || '[]'),
+                        telemetry: JSON.parse(localStorage.getItem('auctmah_telemetry') || '[]'),
                         connectionHistory: connectivityState.connectionHistory,
-                        timestamp: new Date().toISOString()
+                        timestamp: new Date().toISOString(),
+                        userAgent: navigator.userAgent
                     };
                     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
                     const url = URL.createObjectURL(blob);
@@ -1728,16 +1898,32 @@
                     console.group('🔍 Auctmah Diagnostics Report');
                     console.log('📊 Current State:', connectivityState);
                     console.log('🔴 Recent Failures:', JSON.parse(localStorage.getItem('auctmah_failures') || '[]').slice(-5));
+                    console.log('📈 Telemetry Events:', JSON.parse(localStorage.getItem('auctmah_telemetry') || '[]').slice(-10));
                     console.log('🔗 Connection History:', connectivityState.connectionHistory.slice(0, 10));
                     console.log('⏱️ Last Health Check:', connectivityState.lastHealthCheck);
                     console.log('✅ Last Success:', connectivityState.lastSuccessfulConnection);
+                    console.log('❌ Last Failure:', connectivityState.lastFailureReason, 'at', connectivityState.lastFailureTimestamp);
+                    console.groupEnd();
+                },
+                stats: () => {
+                    const telemetry = JSON.parse(localStorage.getItem('auctmah_telemetry') || '[]');
+                    const failures = telemetry.filter(t => t.eventType === 'connection_failure');
+                    const blocked = telemetry.filter(t => t.eventType === 'user_action_blocked');
+                    
+                    console.group('📊 Auctmah Statistics');
+                    console.log('Total Events:', telemetry.length);
+                    console.log('Connection Failures:', failures.length);
+                    console.log('Blocked User Actions:', blocked.length);
+                    console.log('Success Rate:', ((1 - failures.length / Math.max(telemetry.length, 1)) * 100).toFixed(2) + '%');
                     console.groupEnd();
                 }
             };
             
             console.log('🔍 Diagnostics available: window.auctmahDiagnostics');
-            console.log('Commands: getState(), getLogs(), getConnectionHistory(), clearLogs(), clearHistory()');
-            console.log('          exportLogs(), exportAll(), forceReconnect(), printReport()');
+            console.log('Commands: getState(), getLogs(), getTelemetry(), getConnectionHistory()');
+            console.log('          clearLogs(), clearTelemetry(), clearHistory(), clearAll()');
+            console.log('          exportLogs(), exportTelemetry(), exportAll()');
+            console.log('          forceReconnect(), printReport(), stats()');
             
             // ============ MODAL CONTROLS ============
             const modal = document.getElementById('sell-modal');
@@ -1932,6 +2118,15 @@
                 if (!connectivityState.serverHealthy || !connectivityState.wsConnected) {
                     connectivityState.userActionsBlocked++;
                     
+                    // Telemetry: Track blocked action
+                    storeTelemetry('user_action_blocked', {
+                        action: 'place_bid',
+                        amount,
+                        serverHealthy: connectivityState.serverHealthy,
+                        wsConnected: connectivityState.wsConnected,
+                        totalBlocked: connectivityState.userActionsBlocked
+                    });
+                    
                     logConnection('warn', 'user_action', 'Bid blocked - backend unreachable', {
                         amount,
                         serverHealthy: connectivityState.serverHealthy,
@@ -1941,6 +2136,12 @@
                     
                     showToast('error', 'Backend Unavailable', 
                         'Cannot place bid right now. The server is unreachable. Please wait for reconnection.');
+                    
+                    // Re-enable bid button since action was blocked
+                    if (bidBtn) {
+                        bidBtn.disabled = false;
+                        delete bidBtn.dataset.submitting;
+                    }
                     
                     // Try to reconnect
                     showConnectionBanner('Attempting to reconnect...', 'warning');
